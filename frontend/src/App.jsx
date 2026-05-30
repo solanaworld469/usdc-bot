@@ -232,19 +232,24 @@ export default function App() {
       {/* 📌 UPPER IMMUTABLE HEADER PLATFORM */}
       <header className="w-full flex flex-col flex-shrink-0 z-30 bg-[#0a0b0d]">
         
-        {/* Network Live Ticker */}
-        <div className="bg-[#111317] text-[10px] font-mono text-cyan-400/90 px-4 py-2 text-center border-b border-gray-900/40 tracking-wider uppercase">
-          Siberian Facility Linked • Node Active Cluster Rank: {operatorLevel}
-        </div>
+        {/* 👁️ Only render the dynamic facility tickers if the user is NOT on the hardware page */}
+          {activeTab !== 'hardware' && (
+            <>
+              {/* Network Live Ticker */}
+              <div className="bg-[#111317] text-[10px] font-mono text-cyan-400/90 px-4 py-2 text-center border-b border-gray-900/40 tracking-wider uppercase">
+                Siberian Facility Linked • Node Active Cluster Rank: {operatorLevel}
+              </div>
 
-        {/* 🎰 SINGLE LINE LOG SHUFFLER */}
-        <div className="bg-[#0e1014] border-b border-gray-950 h-7 flex items-center px-4 overflow-hidden relative">
-          <p className={`text-[10px] font-mono text-amber-500/80 tracking-tight truncate w-full absolute left-4 right-4 ${
-            animateTrigger ? 'animate-[slideUpFade_0.4s_ease-out_forwards]' : 'opacity-0'
-          }`}>
-            {currentLog}
-          </p>
-        </div>
+              {/* 🎰 SINGLE LINE LOG SHUFFLER */}
+              <div className="bg-[#0e1014] border-b border-gray-950 h-7 flex items-center px-4 overflow-hidden relative">
+                <p className={`text-[10px] font-mono text-amber-500/80 tracking-tight truncate w-full absolute left-4 right-4 ${
+                  animateTrigger ? 'animate-[slideUpFade_0.4s_ease-out_forwards]' : 'opacity-0'
+                }`}>
+                  {currentLog}
+                </p>
+              </div>
+            </>
+          )}
 
         {/* 🎛️ COMPACT FIXED STICKY CHASSIS */}
         {activeTab === 'home' && (

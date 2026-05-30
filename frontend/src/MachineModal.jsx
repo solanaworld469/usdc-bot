@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { getRoiPercentage } from './pricelist';
 
 export default function MachineModal({ 
   machine, 
@@ -6,7 +7,7 @@ export default function MachineModal({
   onClose, 
   onOpenDeposit, 
   onConfirmPurchase,
-  onSetErrorMessage // 👈 We will pass down a state setter to handle errors nicely
+  onSetErrorMessage 
 }) {
   const [activationCode, setActivationCode] = useState('');
   const [showActivationGate, setShowActivationGate] = useState(false);
@@ -15,23 +16,22 @@ export default function MachineModal({
   if (!machine) return null;
 
   const basePriceUsdc = parseFloat(machine.priceUsdc) || 0.00;
-  const roiPercentage = machine.leaseDays === 30 ? 60.76 
-                      : machine.leaseDays === 60 ? 65.70 
-                      : 70.06;
+  const roiPercentage = getRoiPercentage(machine.leaseDays);
 
+  // Math Metrics
   const totalYieldUsdc = basePriceUsdc * (1 + roiPercentage / 100);
   const dailyYieldUsdc = totalYieldUsdc / machine.leaseDays;
-  const yieldPerSecondUsdc = totalYieldUsdc / (machine.leaseDays * 86400);
+  
+  // 1.5% Net Alloc Fee Computation
+  const netAllocFee = basePriceUsdc * 0.015;
+  const totalCostUsdc = basePriceUsdc + netAllocFee;
 
   const handleRentClick = () => {
-    // 🛑 ERADICATED THE BROWSER ALERT POPUP
-    if (userBalance < basePriceUsdc || userBalance < 10.00) {
-      onClose();       // Instantly dismisses this modal container
-      onOpenDeposit(); // Opens up the deposit window view
-      
-      // Pass the error message back to App.jsx to fire the centered ErrorModal directly
+    if (userBalance < totalCostUsdc || userBalance < 10.00) {
+      onClose();       
+      onOpenDeposit(); 
       if (onSetErrorMessage) {
-        onSetErrorMessage(`Insufficient Balance! Your account must meet the $10 minimum threshold before continuing.`);
+        onSetErrorMessage(`Insufficient Balance! Your account must meet the required total cost ($${totalCostUsdc.toFixed(5)}) and the $10 minimum threshold.`);
       }
       return;
     }
@@ -62,14 +62,15 @@ export default function MachineModal({
             </div>
 
             <div className="bg-[#161920] border border-gray-900 rounded-xl p-4 space-y-3 font-mono text-xs">
+              {/* 🌟 Restructured To Match Your Visual Map Exactly */}
               <div className="flex justify-between">
-                <span className="text-gray-500">Rent period</span>
-                <span className="text-white font-bold">{machine.leaseDays} Days</span>
+                <span className="text-gray-500">Contract Lifecycle</span>
+                <span className="text-white font-bold">1-Year Fixed Lease</span>
               </div>
-              
+
               <div className="flex justify-between border-b border-gray-800/40 pb-2">
-                <span className="text-gray-500">Per Second</span>
-                <span className="text-cyan-400 font-bold">${yieldPerSecondUsdc.toFixed(8)} USDC</span>
+                <span className="text-gray-500">Claim Period</span>
+                <span className="text-white font-bold">Every {machine.leaseDays} Days</span>
               </div>
               
               <div className="flex justify-between">
@@ -77,14 +78,24 @@ export default function MachineModal({
                 <span className="text-blue-400 font-bold">${dailyYieldUsdc.toFixed(4)} USDC</span>
               </div>
               
-              <div className="flex justify-between">
+              <div className="flex justify-between border-b border-gray-800/40 pb-2">
                 <span className="text-gray-500">Total yield</span>
                 <span className="text-emerald-400 font-bold">${totalYieldUsdc.toFixed(4)} USDC</span>
               </div>
               
-              <div className="flex justify-between border-t border-gray-800 pt-2 items-center">
-                <span className="text-gray-400">Price</span>
-                <span className="text-white font-bold text-sm">${basePriceUsdc.toFixed(2)} USDC</span>
+              <div className="flex justify-between pt-1">
+                <span className="text-gray-500">Price</span>
+                <span className="text-white font-bold">${basePriceUsdc.toFixed(2)} USDC</span>
+              </div>
+
+              <div className="flex justify-between border-b border-gray-800/40 pb-2">
+                <span className="text-gray-500">Net Alloc Fee (1.5%)</span>
+                <span className="text-amber-500 font-bold">${netAllocFee.toFixed(5)} USDC</span>
+              </div>
+
+              <div className="flex justify-between pt-1 items-center">
+                <span className="text-gray-400">Total Cost</span>
+                <span className="text-white font-bold text-sm">${totalCostUsdc.toFixed(5)} USDC</span>
               </div>
             </div>
 
@@ -92,7 +103,7 @@ export default function MachineModal({
               onClick={handleRentClick}
               className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 text-white py-3.5 rounded-xl font-bold tracking-wider uppercase text-xs active:scale-[0.99] transition-transform"
             >
-              Rent Hardware
+              Rent Hardware — ${totalCostUsdc.toFixed(5)}
             </button>
           </>
         ) : (

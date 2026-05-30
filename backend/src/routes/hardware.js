@@ -2,33 +2,33 @@ const express = require('express');
 const router = express.Router();
 const db = require('../config/db');
 const authMiddleware = require('../middlewares/auth');
-const backendPrices = require('../config/prices'); // 📊 Clean, isolated configuration sheet
+const backendPrices = require('../config/prices'); 
 
 /**
  * 🛒 POST /api/hardware/rent
- * Secure Checkout Engine: Validates $10 threshold, deducts balance, and deploys rig row.
- * Implements strict structural masking to shield users from database/infrastructure errors.
+ * Secure Checkout Engine: Validates cost + 1.5% Net Alloc Fee, checks thresholds, and deploys rig row.
  */
 router.post('/rent', authMiddleware, async (req, res) => {
   const { machine_id, lease_days } = req.body;
   const telegramId = req.user.telegram_id;
 
-  // 1. Initial input validation
   if (!machine_id || !lease_days) {
     return res.status(400).json({ error: 'System alignment parameters missing.' });
   }
 
-  // 2. Extract verification pricing from backend config sheet
   const machinePrice = backendPrices[machine_id];
   if (machinePrice === undefined) {
     return res.status(404).json({ error: 'Invalid hardware model signature.' });
   }
 
+  // 🌟 Calculate backend Net Alloc Fee parameters (1.5%)
+  const netAllocFee = machinePrice * 0.015;
+  const totalRequiredCost = machinePrice + netAllocFee;
+
   const client = await db.connect();
   try {
-    await client.query('BEGIN'); // Start atomic database transaction isolate
+    await client.query('BEGIN'); 
 
-    // 3. Fetch operator balance with a strict row lock to crush race conditions
     const userResult = await client.query(
       'SELECT vault_balance FROM users WHERE telegram_id = $1 FOR UPDATE',
       [telegramId]
@@ -41,43 +41,41 @@ router.post('/rent', authMiddleware, async (req, res) => {
 
     const currentBalance = parseFloat(userResult.rows[0].vault_balance) || 0.00;
 
-    // 4. SECURE CHECKLIST VERIFICATION: Enforce your exact $10 threshold rule
-    if (currentBalance < machinePrice || currentBalance < 10.00) {
+    // 🛑 Check user balance against machine price + fee, enforcing the $10 floor rule
+    if (currentBalance < totalRequiredCost || currentBalance < 10.00) {
       await client.query('ROLLBACK');
       return res.status(400).json({ 
-        error: `Insufficient Funds! Your account must meet the $10 minimum threshold before continuing.` 
+        error: `Insufficient Funds! Your account must meet the required total cost ($${totalRequiredCost.toFixed(5)}) and the $10 minimum threshold.` 
       });
     }
 
-    // 5. Calculate accounting adjustments
-    const newBalance = currentBalance - machinePrice;
+    // Deduct full amount including fee
+    const newBalance = currentBalance - totalRequiredCost;
     const serverNow = new Date();
     
-    // Calculate precise lease expiration date timestamp
     const expirationDate = new Date();
     expirationDate.setDate(serverNow.getDate() + parseInt(lease_days));
 
-    // 6. Update user account balance metrics
     await client.query(
       'UPDATE users SET vault_balance = $1, last_claim_at = $2 WHERE telegram_id = $3',
       [newBalance, serverNow, telegramId]
     );
 
-    // 7. Instantiate active machine asset entity row into database inventory
+    // Instantiate active machine row inside live tracking tables
     await client.query(
-      `INSERT INTO user_machines (telegram_id, machine_id, price_usdc, lease_days, status, created_at, expires_at) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [telegramId, machine_id, machinePrice, lease_days, 'ACTIVE', serverNow, expirationDate]
+      `INSERT INTO user_machines (user_id, machine_tier, hourly_yield_rate, expires_at, created_at) 
+       VALUES ($1, $2, $3, $4, $5)`,
+      [telegramId, machine_id, 0.0, expirationDate, serverNow]
     );
 
-    // 8. Write a record straight into historical ledgers for accounting audits
+    // Log the transaction in the history audit table
     await client.query(
       `INSERT INTO historical_ledgers (telegram_id, category, amount, status, created_at) 
        VALUES ($1, $2, $3, $4, $5)`,
-      [telegramId, 'WITHDRAWAL', machinePrice, 'COMPLETED', serverNow]
+      [telegramId, 'WITHDRAWAL', totalRequiredCost, 'COMPLETED', serverNow]
     );
 
-    await client.query('COMMIT'); // Commit all entries safely to PostgreSQL logs
+    await client.query('COMMIT'); 
 
     res.status(200).json({
       message: 'Processing coils deployed and ignition loop verified.',
@@ -86,18 +84,13 @@ router.post('/rent', authMiddleware, async (req, res) => {
     });
 
   } catch (err) {
-    // 🛑 ROLLBACK THE TRANSACTION SO USER FUNDS ARE NOT DAMAGED
     await client.query('ROLLBACK');
-
-    // 🧑‍💻 REAL ADMIN LOGS: Spitted out safely inside your local development backend terminal window
-    console.error(`🔻 [CRITICAL AUDIT ERROR][User: ${telegramId}][Time: ${new Date().toISOString()}]:`, err.stack);
-
-    // 🛡️ MASKED SOFT ERROR TO USER: Client only sees this clean text inside their custom center alert box
+    console.error(`🔻 [CHECKOUT ERROR]:`, err.stack);
     res.status(500).json({ 
-      error: 'Hardware deployment anomaly. Secure connection dropped. Contact infrastructure grid team.' 
+      error: 'Hardware deployment anomaly. Secure connection dropped.' 
     });
   } finally {
-    client.release(); // Free database client back to the pool instantly
+    client.release(); 
   }
 });
 

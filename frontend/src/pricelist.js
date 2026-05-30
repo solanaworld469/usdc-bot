@@ -43,7 +43,7 @@ export const hardcodedRigs = [
  */
 export function getRoiPercentage(leaseDays) {
   if (leaseDays === 30) return 60.76;
-  if (leaseDays === 60) return 65.70;
-  if (leaseDays === 90) return 70.06;
+  if (leaseDays === 60) return 63.70; // 🌟 Reduced to 63.70%
+  if (leaseDays === 90) return 69.00; // 🌟 Reduced to 69.00%
   return 0.00;
 }
