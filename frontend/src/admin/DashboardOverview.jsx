@@ -5,7 +5,7 @@ export default function DashboardOverview() {
   const [metrics, setMetrics] = useState({ totalUsers: 0, activeMachines: 0, totalTvl: 0 });
 
  useEffect(() => {
-    axios.get('http://localhost:5000/api/admin/console?tab=users', {
+    axios.get('http://localhost:5000/api/admin-panel/users', {
       headers: { 'Accept': 'application/json', 'x-admin-key': 'siberian_godmode_2026' }
     })
       .then(res => {

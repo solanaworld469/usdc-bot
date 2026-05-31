@@ -6,7 +6,7 @@ export default function MachineMonitor() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    axios.get('http://localhost:5000/api/admin/console?tab=user_machines', {
+    axios.get('http://localhost:5000/api/admin-panel/machines', {
       headers: { 'Accept': 'application/json', 'x-admin-key': 'siberian_godmode_2026' }
     })
       .then(res => {

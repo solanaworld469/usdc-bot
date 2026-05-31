@@ -8,7 +8,7 @@ export default function KeysInventory() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    axios.get('http://localhost:5000/api/admin/console?tab=activation_keys', {
+    axios.get('http://localhost:5000/api/admin-panel/keys', {
       headers: { 'Accept': 'application/json', 'x-admin-key': 'siberian_godmode_2026' }
     })
       .then(res => {
