@@ -177,12 +177,13 @@ export default function App() {
     }
   };
 
-  const handlePurchaseMachine = async (machineId, leaseDays) => {
+  const handlePurchaseMachine = async (machineId, leaseDays, keyCode) => {
     try {
       const mockAuthHeader = "Bearer 999999999";
       const response = await axios.post('http://localhost:5000/api/hardware/rent', {
         machine_id: machineId,
-        lease_days: leaseDays
+        lease_days: leaseDays,
+        key_code: keyCode // 👑 FIXED: Sends the key to the backend!
       }, {
         headers: { Authorization: mockAuthHeader }
       });

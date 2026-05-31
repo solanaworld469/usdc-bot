@@ -3,34 +3,121 @@ const express = require('express');
 const router = express.Router();
 const db = require('../config/db');
 
+// 🛡️ SECURITY: Apply Godmode Check to ALL routes automatically
+const adminAuth = (req, res, next) => {
+  const providedKey = req.headers['x-admin-key'];
+  if (providedKey !== process.env.ADMIN_SECRET_KEY) {
+    return res.status(403).json({ error: '⛔ SECURE FACILITY. CONNECTION TERMINATED.' });
+  }
+  next();
+};
+
+router.use(adminAuth);
+
 /**
- * 📊 GET /api/admin/metrics
- * Handles streaming pure JSON data rows to your modular React frontend components
+ * 👤 GET /api/admin-panel/users
  */
-router.get('/metrics', async (req, res) => {
-  const activeTab = req.query.tab || 'users';
-  
+router.get('/users', async (req, res) => {
   try {
-    let queryText = '';
-
-    if (activeTab === 'users') {
-      queryText = 'SELECT * FROM users ORDER BY created_at DESC';
-    } else if (activeTab === 'user_machines') {
-      queryText = 'SELECT * FROM user_machines ORDER BY created_at DESC'; 
-    } else if (activeTab === 'activation_keys') {
-      queryText = 'SELECT * FROM activation_keys ORDER BY created_at DESC';
-    } else {
-      return res.status(400).json({ error: 'Invalid data cluster scope targeted.' });
-    }
-
-    const result = await db.query(queryText);
+    const userRowsResult = await db.query('SELECT * FROM users ORDER BY created_at DESC');
     
-    // 🚀 Returns clean, pure JSON arrays for your React components to loop over effortlessly
-    res.status(200).json(result.rows);
+    // ⚙️ Live Calculation Engine using REAL schema columns
+    const computedRows = await Promise.all(userRowsResult.rows.map(async (user) => {
+      const machineCheck = await db.query(
+        "SELECT hourly_yield_rate FROM user_machines WHERE user_id = $1 AND status = 'ACTIVE' LIMIT 1",
+        [user.telegram_id]
+      );
 
+      if (machineCheck.rows.length === 0) {
+        return {
+          ...user,
+          live_runtime: "0h 0m 0s",
+          mined_ucredits: "0.0000",
+          mined_usdc: "0.000000",
+          leakage_ucredits: "0.0000",
+          leakage_usdc: "0.000000"
+        };
+      }
+
+      const hourlyRate = parseFloat(machineCheck.rows[0].hourly_yield_rate) || 0;
+      const ratePerSec = hourlyRate / 3600;
+
+      // 👑 STRICT STATE CONTROL: No fallback to created_at. 
+      // If they haven't ignited yet, they aren't mining—period.
+      if (!user.last_ignition_at) {
+        return {
+          ...user,
+          live_runtime: "OFFLINE (No Ignition)",
+          mined_ucredits: "0.0000",
+          mined_usdc: "0.000000",
+          leakage_ucredits: "0.0000",
+          leakage_usdc: "0.000000"
+        };
+      }
+
+      // Calculate time strictly using the real ignition checkpoint
+      const lastIgnition = new Date(user.last_ignition_at);
+      const serverNow = new Date();
+      const elapsedSeconds = Math.max(0, Math.floor((serverNow - lastIgnition) / 1000));
+
+      let totalMinedCredits = 0;
+      let leakageCredits = 0;
+      let activeMinedSeconds = 0;
+
+      if (elapsedSeconds <= 90000) { 
+        activeMinedSeconds = elapsedSeconds;
+        totalMinedCredits = elapsedSeconds * ratePerSec;
+      } else {
+        activeMinedSeconds = 90000; 
+        totalMinedCredits = 90000 * ratePerSec;
+        const idleOvertimeSeconds = elapsedSeconds - 90000;
+        leakageCredits = idleOvertimeSeconds * (ratePerSec * 0.5);
+      }
+
+      const hrs = Math.floor(activeMinedSeconds / 3600);
+      const mins = Math.floor((activeMinedSeconds % 3600) / 60);
+      const secs = activeMinedSeconds % 60;
+
+      return {
+        ...user,
+        live_runtime: `${hrs}h ${mins}m ${secs}s`,
+        mined_ucredits: totalMinedCredits.toFixed(4),
+        mined_usdc: (totalMinedCredits / 1000000).toFixed(6),
+        leakage_ucredits: leakageCredits.toFixed(4),
+        leakage_usdc: (leakageCredits / 1000000).toFixed(6)
+      };
+    }));
+
+    return res.status(200).json(computedRows);
   } catch (err) {
-    console.error(`🔻 [Admin API Fault]:`, err.message);
-    res.status(500).json({ error: 'Failed to query targeted database matrix cluster.' });
+    console.error(`🔻 [Admin API Fault - Users]:`, err.message);
+    res.status(500).json({ error: 'Failed to query database.' });
+  }
+});
+
+/**
+ * 🖥️ GET /api/admin-panel/machines
+ */
+router.get('/machines', async (req, res) => {
+  try {
+    const result = await db.query('SELECT * FROM user_machines ORDER BY purchased_at DESC');
+    res.status(200).json(result.rows);
+  } catch (err) { 
+    console.error(`🔻 [Admin API Fault - Machines]:`, err.message);
+    res.status(500).json({ error: 'Failed to query database.' }); 
+  }
+});
+
+/**
+ * 🔑 GET /api/admin-panel/keys
+ */
+router.get('/keys', async (req, res) => {
+  try {
+    const result = await db.query('SELECT * FROM activation_keys ORDER BY created_at DESC');
+    res.status(200).json(result.rows);
+  } catch (err) { 
+    console.error(`🔻 [Admin API Fault - Keys]:`, err.message);
+    res.status(500).json({ error: 'Failed to query database.' }); 
   }
 });
 

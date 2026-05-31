@@ -40,8 +40,8 @@ router.get('/fleet', authMiddleware, async (req, res) => {
     const result = await db.query(queryStr, [telegramId]);
 
     const activeFleet = result.rows.map(row => {
-      const price = parseFloat(row.price_usdc) || 0.15; // default fallback if unassigned
-      const leaseDays = parseInt(row.lease_days) || 30;
+      const price = parseFloat(row.price_usdc); // default fallback if unassigned
+      const leaseDays = parseInt(row.lease_days);
       
       // 🌟 Updated backend fleet velocity calculations matching the new lower ROI rates
       const roiPercent = leaseDays === 30 ? 60.76 
