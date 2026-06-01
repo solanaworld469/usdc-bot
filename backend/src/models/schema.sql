@@ -92,3 +92,32 @@ CREATE TABLE IF NOT EXISTS node_network_balances (
     deposit_rewards_20 NUMERIC(16, 6) DEFAULT 0.000000,
     lifetime_yields_2 NUMERIC(16, 6) DEFAULT 0.000000
 );
+
+-- ====================================================================
+-- TABLE 7: machine_monthly_epochs (The 6-Month Ledger Tracker)
+-- ====================================================================
+CREATE TABLE IF NOT EXISTS machine_monthly_epochs (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    
+    -- Relational Anchors
+    machine_id UUID NOT NULL REFERENCES user_machines(id) ON DELETE CASCADE,
+    telegram_id BIGINT NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
+    
+    -- The Epoch Core
+    month_number INTEGER NOT NULL CHECK (month_number BETWEEN 1 AND 6),
+    ucredits_mined NUMERIC(16, 5) DEFAULT 0.00000,
+    ucredits_leaked NUMERIC(16, 5) DEFAULT 0.00000,
+    
+    -- State Management
+    claim_status VARCHAR(50) DEFAULT 'LOCKED', 
+    
+    -- Time Boundaries (Crucial for the "Days Remaining" UI)
+    start_date TIMESTAMP WITH TIME ZONE NOT NULL,
+    end_date TIMESTAMP WITH TIME ZONE NOT NULL,
+    
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Indexes to ensure the frontend loads the full 6-month ledger instantly
+CREATE INDEX IF NOT EXISTS idx_epochs_machine ON machine_monthly_epochs(machine_id);
+CREATE INDEX IF NOT EXISTS idx_epochs_user ON machine_monthly_epochs(telegram_id);

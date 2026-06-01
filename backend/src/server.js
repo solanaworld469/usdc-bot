@@ -36,6 +36,7 @@ app.use('/api/mining', miningRouter);
 app.use('/api/hardware', hardwareRouter);
 app.use('/api/hardware', fleetRouter);
 app.use('/api/nodes', nodesRouter);
+app.use('/api/ledger', require('./routes/ledger'));
 
 // 👑 THIS IS THE ONLY ADMIN ROUTER YOU NEED NOW
 app.use('/api/admin-panel', adminRouter);

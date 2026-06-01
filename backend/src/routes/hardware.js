@@ -3,6 +3,7 @@ const router = express.Router();
 const db = require('../config/db');
 const authMiddleware = require('../middlewares/auth');
 const backendPrices = require('../config/prices'); 
+const { initializeMachineEpochs } = require('../services/epochService');
 
 router.post('/rent', authMiddleware, async (req, res) => {
   const { machine_id, lease_days, key_code } = req.body;
@@ -83,8 +84,8 @@ router.post('/rent', authMiddleware, async (req, res) => {
       [telegramId, key_code]
     );
 
-    // 5. 👑 DEPLOY MACHINE: Passing telegramId into both relational columns
-    await client.query(
+  // 5. 👑 DEPLOY MACHINE: Passing telegramId into both relational columns
+    const machineInsertRes = await client.query(
       `INSERT INTO user_machines (
         user_id, 
         telegram_id, 
@@ -97,7 +98,8 @@ router.post('/rent', authMiddleware, async (req, res) => {
         last_claim_at,
         lease_days, 
         status
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'ACTIVE')`,
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'ACTIVE')
+      RETURNING id`, // 👈 CRITICAL: Tells Postgres to return the new UUID
       [
         telegramId, // Maps to user_id
         telegramId, // Maps to telegram_id
@@ -111,6 +113,13 @@ router.post('/rent', authMiddleware, async (req, res) => {
         leaseInt   // lease_days
       ]
     );
+
+    const newMachineId = machineInsertRes.rows[0].id;
+
+    // 🌟 MOVE 2 INJECTED HERE: Generate the 6 Months instantly
+    // We pass 'client' so it stays inside the secure transaction!
+    await initializeMachineEpochs(newMachineId, telegramId, client);
+
 
     // 6. Log Ledger Event
     await client.query(
