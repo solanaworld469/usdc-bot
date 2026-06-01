@@ -18,10 +18,16 @@ export default function MachineModal({
 
   if (!machine) return null;
 
-  const basePriceUsdc = parseFloat(machine.priceUsdc) || 0.00;
   const roiPercentage = getRoiPercentage(machine.leaseDays);
 
-  const totalYieldUsdc = basePriceUsdc * (1 + roiPercentage / 100);
+  const basePriceUsdc = parseFloat(machine.priceUsdc);
+
+  if (isNaN(basePriceUsdc) || basePriceUsdc <= 0) {
+    throw new Error("pricing data corrupted Message Support");
+  }
+
+  const totalYieldUsdc = basePriceUsdc * (roiPercentage / 100);
+
   const dailyYieldUsdc = totalYieldUsdc / machine.leaseDays;
   
   const netAllocFee = basePriceUsdc * 0.015;
@@ -32,7 +38,7 @@ export default function MachineModal({
       onClose();       
       onOpenDeposit(); 
       if (onSetErrorMessage) {
-        onSetErrorMessage(`Insufficient Balance! Your account must meet the required total cost ($${totalCostUsdc.toFixed(5)}) and the $10 minimum threshold.`);
+        onSetErrorMessage(`Insufficient Balance! Your account must meet the required total cost ($${totalCostUsdc.toFixed(2)}) and the $10 minimum threshold.`);
       }
       return;
     }
@@ -117,12 +123,12 @@ const handleVerifyAndDeploy = async () => {
               
               <div className="flex justify-between">
                 <span className="text-gray-500">Daily yield</span>
-                <span className="text-blue-400 font-bold">${dailyYieldUsdc.toFixed(4)} USDC</span>
+                <span className="text-blue-400 font-bold">${dailyYieldUsdc.toFixed(2)} USDC</span>
               </div>
               
               <div className="flex justify-between border-b border-gray-800/40 pb-2">
                 <span className="text-gray-500">Total yield</span>
-                <span className="text-emerald-400 font-bold">${totalYieldUsdc.toFixed(4)} USDC</span>
+                <span className="text-emerald-400 font-bold">${totalYieldUsdc.toFixed(2)} USDC</span>
               </div>
               
               <div className="flex justify-between pt-1">
@@ -132,12 +138,12 @@ const handleVerifyAndDeploy = async () => {
 
               <div className="flex justify-between border-b border-gray-800/40 pb-2">
                 <span className="text-gray-500">Net Alloc Fee (1.5%)</span>
-                <span className="text-amber-500 font-bold">${netAllocFee.toFixed(5)} USDC</span>
+                <span className="text-amber-500 font-bold">${netAllocFee.toFixed(2)} USDC</span>
               </div>
 
               <div className="flex justify-between pt-1 items-center">
                 <span className="text-gray-400">Total Cost</span>
-                <span className="text-white font-bold text-sm">${totalCostUsdc.toFixed(5)} USDC</span>
+                <span className="text-white font-bold text-sm">${totalCostUsdc.toFixed(2)} USDC</span>
               </div>
             </div>
 
@@ -145,7 +151,7 @@ const handleVerifyAndDeploy = async () => {
               onClick={handleRentClick}
               className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white py-3.5 rounded-xl font-bold tracking-wider uppercase text-xs active:scale-[0.99] transition-all"
             >
-              Rent Hardware — ${totalCostUsdc.toFixed(5)}
+              Rent Hardware — ${totalCostUsdc.toFixed(2)}
             </button>
           </div>
         ) : (

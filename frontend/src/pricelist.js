@@ -45,5 +45,7 @@ export function getRoiPercentage(leaseDays) {
   if (leaseDays === 30) return 60.76;
   if (leaseDays === 60) return 63.70;
   if (leaseDays === 90) return 69.00; 
-  return 0.00;
+  
+  // 🛡️ NO FALLBACK: If it's not 30, 60, or 90, halt execution immediately.
+  throw new Error("CRITICAL_SECURITY_HALT: Invalid hardware lease duration detected.");
 }

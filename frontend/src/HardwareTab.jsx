@@ -67,7 +67,7 @@ export default function HardwareTab({ onSelectMachine }) {
       {/* 📦 EXPANDED RUNWAY GRID SYSTEM */}
       <div className="grid grid-cols-2 gap-3 pb-4 pt-1.5 pr-0.5">
         {hardcodedRigs.map((rig, index) => {
-          const totalYieldUsdc = rig.priceUsdc * (1 + roiPercentage / 100);
+          const totalYieldUsdc = rig.priceUsdc * (roiPercentage / 100);
           const dailyYieldUsdc = totalYieldUsdc / selectedDuration;
 
           return (
@@ -88,7 +88,7 @@ export default function HardwareTab({ onSelectMachine }) {
                 
                 <div className="bg-[#0e1014] rounded-md py-1 px-2 border border-gray-950">
                   <p className="text-[8px] text-gray-500 font-mono uppercase tracking-tight">Daily Yield</p>
-                  <p className="text-[10px] text-blue-400 font-mono font-bold tracking-tight">${dailyYieldUsdc.toFixed(4)} USDC</p>
+                  <p className="text-[10px] text-blue-400 font-mono font-bold tracking-tight">${dailyYieldUsdc.toFixed(2)} USDC</p>
                 </div>
                 
                 <div className="w-full bg-[#1e2330] border border-gray-800 text-gray-200 text-[11px] font-mono font-bold py-1.5 rounded-lg mt-1">

@@ -3,122 +3,118 @@ const router = express.Router();
 const db = require('../config/db');
 const authMiddleware = require('../middlewares/auth');
 
-/**
- * 📥 POST /api/mining/claim
- * Bulletproof Revenue Settlement Engine
- * Calculates true elapsed time windows and settles accrued credit balances securely.
- */
 router.post('/claim', authMiddleware, async (req, res) => {
   const telegramId = req.user.telegram_id;
   const serverNow = new Date();
 
-  const client = await db.connect();
+  const client = await db.pool.connect();
   try {
-    await client.query('BEGIN'); // Open isolated database transaction wall
+    await client.query('BEGIN');
 
-    // 1. Fetch user profile with strict row locking to kill double-click exploits
+    // 1. Lock user profile to prevent double-click balance attacks
     const userResult = await client.query(
-      'SELECT vault_balance, last_claim_at FROM users WHERE telegram_id = $1 FOR UPDATE',
+      'SELECT vault_balance, total_usdc_earned, total_usdc_leaked FROM users WHERE telegram_id = $1 FOR UPDATE',
       [telegramId]
     );
 
-    if (userResult.rows.length === 0) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({ error: 'Operator node profile not found.' });
-    }
-
+    if (userResult.rows.length === 0) throw new Error('USER_NOT_FOUND');
     const userData = userResult.rows[0];
-    const currentVaultBalance = parseFloat(userData.vault_balance) || 0.00;
-    
-    // Default fallback if last_claim_at is blank (e.g. brand new user)
-    const lastClaimAt = userData.last_claim_at ? new Date(userData.last_claim_at) : serverNow;
 
-    // 2. Compute the exact time delta window in seconds
-    const elapsedSeconds = Math.max(0, Math.floor((serverNow - lastClaimAt) / 1000));
-
-    if (elapsedSeconds === 0) {
-      await client.query('ROLLBACK');
-      return res.status(400).json({ error: 'Core engine throttling. Coils settled too recently.' });
-    }
-
-    // 3. Fetch all actively running machine assets (Ignoring any expired lines)
+    // 2. Fetch all actively mining rigs for this user
     const fleetResult = await client.query(
-      `SELECT machine_id, price_usdc, lease_days 
-       FROM user_machines 
+      `SELECT id, hourly_yield_rate, last_ignition_time FROM user_machines 
        WHERE telegram_id = $1 AND status = 'ACTIVE' AND expires_at > $2`,
       [telegramId, serverNow]
     );
 
-    // If they click claim but don't own any active machinery, reset their timer and stop
     if (fleetResult.rows.length === 0) {
-      await client.query(
-        'UPDATE users SET last_claim_at = $1 WHERE telegram_id = $2',
-        [serverNow, telegramId]
-      );
       await client.query('COMMIT');
-      return res.status(200).json({
-        message: 'Claim sync complete. Core active fleet size is currently empty.',
-        new_vault_balance: currentVaultBalance
-      });
+      return res.status(200).json({ message: 'No active machines to settle.', new_vault_balance: userData.vault_balance });
     }
 
-    // 4. Run the master accumulation math loops across the active fleet rows
-    let totalAccumulatedUCredits = 0;
+    let totalClaimableUsdc = 0;
+    let totalLeakageUsdc = 0;
 
-    fleetResult.rows.forEach(machine => {
-      const price = parseFloat(machine.price_usdc) || 0;
-      
-      // Strict configuration matching your exact system tier ROI requirements
-      const roiPercentage = machine.lease_days === 30 ? 60.76 
-                          : machine.lease_days === 60 ? 65.70 
-                          : 70.06;
+    // 3. ⏱️ THE 3-PHASE HARDWARE LOOP
+    for (const machine of fleetResult.rows) {
+      const hourlyRate = parseFloat(machine.hourly_yield_rate);
+      const lastIgnition = new Date(machine.last_ignition_time);
+      const elapsedSeconds = Math.max(0, Math.floor((serverNow - lastIgnition) / 1000));
+      const elapsedHours = elapsedSeconds / 3600;
 
-      const totalContractYieldUsdc = price * (1 + roiPercentage / 100);
-      const totalSecondsInLease = machine.lease_days * 86400;
-      
-      // Calculate micro uCredits accrued per single second tick window
-      const uCreditsPerSecond = (totalContractYieldUsdc * 1000000) / totalSecondsInLease;
-      
-      // Accumulate this machine's contribution over the elapsed timeframe
-      totalAccumulatedUCredits += (elapsedSeconds * uCreditsPerSecond);
-    });
+      let machineClaim = 0;
+      let machineLeakage = 0;
 
-    // 5. Convert accumulated uCredits pool into standard USDC dollars for the vault
-    const earnedUsdc = totalAccumulatedUCredits / 1000000;
-    const newVaultBalance = currentVaultBalance + earnedUsdc;
+      if (elapsedHours <= 24) {
+        // PHASE 1: Active Mining (Normal Accrual)
+        machineClaim = elapsedHours * hourlyRate;
+      } else if (elapsedHours > 24 && elapsedHours <= 25) {
+        // PHASE 2: Grace Period (Frozen at max 24hr yield)
+        machineClaim = 24 * hourlyRate;
+      } else {
+        // PHASE 3: Thermal Leakage (Penalizes late claims using exact same speed)
+        const leakHours = elapsedHours - 25;
+        machineLeakage = leakHours * hourlyRate;
+        machineClaim = (24 * hourlyRate) - machineLeakage;
 
-    // 6. Push balance settlements and update the timer checkpoint to the current server timestamp
+        // Hard floor constraint: Prevent negative daily balances
+        if (machineClaim < 0) machineClaim = 0; 
+      }
+
+      totalClaimableUsdc += machineClaim;
+      totalLeakageUsdc += machineLeakage;
+
+      // Reset loop timers and permanently track leaked money for UI display
+      await client.query(
+        `UPDATE user_machines 
+         SET last_ignition_time = $1, last_claim_at = $1, unmined_loss_pool = unmined_loss_pool + $2
+         WHERE id = $3`,
+        [serverNow, machineLeakage, machine.id]
+      );
+    }
+
+    // 4. Master Account Settlement
+    const newVaultBalance = parseFloat(userData.vault_balance) + totalClaimableUsdc;
+    const newTotalEarned = parseFloat(userData.total_usdc_earned || 0) + totalClaimableUsdc;
+    const newTotalLeaked = parseFloat(userData.total_usdc_leaked || 0) + totalLeakageUsdc;
+
     await client.query(
-      'UPDATE users SET vault_balance = $1, last_claim_at = $2 WHERE telegram_id = $3',
-      [newVaultBalance, serverNow, telegramId]
+      `UPDATE users 
+       SET vault_balance = $1, total_usdc_earned = $2, total_usdc_leaked = $3, last_claim_at = $4 
+       WHERE telegram_id = $5`,
+      [newVaultBalance, newTotalEarned, newTotalLeaked, serverNow, telegramId]
     );
 
-    // 7. Write an audit record directly into historical logs
+    // Ledger Logging
     await client.query(
       `INSERT INTO historical_ledgers (telegram_id, category, amount, status, created_at) 
        VALUES ($1, $2, $3, $4, $5)`,
-      [telegramId, 'DEPOSIT', earnedUsdc, 'COMPLETED', serverNow]
+      [telegramId, 'CLAIM_MINED', totalClaimableUsdc, 'COMPLETED', serverNow]
     );
 
-    await client.query('COMMIT'); // Commit all accounting changes permanently to PostgreSQL logs
+    if (totalLeakageUsdc > 0) {
+      await client.query(
+        `INSERT INTO historical_ledgers (telegram_id, category, amount, status, created_at) 
+         VALUES ($1, $2, $3, $4, $5)`,
+        [telegramId, 'UNMINED_LOSS', totalLeakageUsdc, 'COMPLETED', serverNow]
+      );
+    }
+
+    await client.query('COMMIT');
 
     res.status(200).json({
-      message: `Successfully synchronized core coils! Settled +${totalAccumulatedUCredits.toFixed(2)} uCredits ($${earnedUsdc.toFixed(4)} USDC) into your terminal vault.`,
+      message: totalLeakageUsdc > 0 
+        ? `Claimed $${totalClaimableUsdc.toFixed(4)}. Grid lost $${totalLeakageUsdc.toFixed(4)} to thermal leakage.` 
+        : `Ignition settled. Successfully claimed $${totalClaimableUsdc.toFixed(4)} USDC.`,
       new_vault_balance: newVaultBalance
     });
 
   } catch (err) {
-    await client.query('ROLLBACK'); // Core safety mechanism protects client balance from corruption loops
-    
-    // Local secure log output strictly for your terminal console window (The Admin)
-    console.error(`🔻 [BULLETPROOF CLAIM EVENT FAULT][User: ${telegramId}]:`, err.stack);
-
-    // Sanitized soft error message shown to user
-    res.status(500).json({ 
-      error: 'Settlement transaction failed. Node synchronization dropped. Contact grid team.' 
-    });
+    await client.query('ROLLBACK');
+    console.error(`🔻 [IGNITION CLAIM FAULT]:`, err.stack);
+    res.status(500).json({ error: 'Failed to settle grid claims.' });
   } finally {
-    client.release(); // Free database line back to the connection pool instantly
+    client.release();
   }
 });
 

@@ -8,13 +8,17 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- TABLE 1: users (The Master Account Ledger)
 -- ====================================================================
 CREATE TABLE IF NOT EXISTS users (
-    telegram_id BIGINT PRIMARY KEY, -- Checked against raw Telegram packet IDs
+    telegram_id BIGINT PRIMARY KEY,
     username VARCHAR(100),
-    vault_balance NUMERIC(16, 6) DEFAULT 0.000000, -- Permanent spending vault (USDC)
-    operator_rank VARCHAR(30) DEFAULT 'Bronze Operator', -- Level-scaling badge
-    is_activated BOOLEAN DEFAULT FALSE, -- Premium rental system gate key status
-    app_registered BOOLEAN DEFAULT FALSE, -- Funnel tracking: False = Bot Only, True = opened Mini App
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    vault_balance NUMERIC(16, 6) DEFAULT 0.000000,
+    operator_rank VARCHAR(30) DEFAULT 'Bronze Operator',
+    is_activated BOOLEAN DEFAULT FALSE,
+    app_registered BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    last_claim_at TIMESTAMP WITHOUT TIME ZONE,
+    level VARCHAR(50),
+    total_usdc_earned NUMERIC(16, 6) DEFAULT 0.000000,
+    total_usdc_leaked NUMERIC(16, 6) DEFAULT 0.000000
 );
 
 -- ====================================================================
@@ -23,31 +27,68 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS user_machines (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id BIGINT NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
-    machine_tier VARCHAR(50) NOT NULL, -- e.g., 'SOL Core', 'SOL Flux'
-    hourly_yield_rate NUMERIC(16, 6) NOT NULL, -- Fixed production velocity factor
-    last_ignition_time TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP, -- 24h Engine anchor point
-    expires_at TIMESTAMP WITH TIME ZONE NOT NULL, -- Permanent 30/60/90 contract end marker
-    unmined_loss_pool NUMERIC(16, 6) DEFAULT 0.000000, -- Real-time leakage tracking accumulator
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    telegram_id BIGINT NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
+    machine_tier VARCHAR(50) NOT NULL,
+    hourly_yield_rate NUMERIC(16, 6) NOT NULL,
+    price_usdc NUMERIC(16, 6),
+    lease_days INTEGER,
+    status VARCHAR(50) DEFAULT 'ACTIVE',
+    purchased_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    started_at TIMESTAMP WITHOUT TIME ZONE,
+    last_ignition_time TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    last_claim_at TIMESTAMP WITHOUT TIME ZONE,
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    unmined_loss_pool NUMERIC(16, 6) DEFAULT 0.000000
 );
-
--- INDEXING FOR PERFORMANCE: Optimizes speed calculations when thousands of nodes tick simultaneously
 CREATE INDEX IF NOT EXISTS idx_user_machines_user_id ON user_machines(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_machines_last_ignition ON user_machines(last_ignition_time);
 
 -- ====================================================================
--- TABLE 3: activation_keys (The Distribution Ledger)
+-- TABLE 3: activation_keys (The Secure Access Ledger)
 -- ====================================================================
 CREATE TABLE IF NOT EXISTS activation_keys (
-    key_code VARCHAR(50) PRIMARY KEY, -- The generated unique alpha-token
-    creator_id BIGINT NOT NULL REFERENCES users(telegram_id) ON DELETE RESTRICT, -- Whale pack owner
-    status VARCHAR(20) DEFAULT 'UNUSED', -- 'UNUSED' | 'ACTIVE'
-    used_by BIGINT REFERENCES users(telegram_id) ON DELETE SET NULL, -- Target referral friend ID
-    generated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    activated_at TIMESTAMP WITH TIME ZONE,
-    
-    -- SAFETY CONSTRAINT: Prevents a key code from holding corrupt status fields
-    CONSTRAINT chk_key_status CHECK (status IN ('UNUSED', 'ACTIVE'))
+    id SERIAL PRIMARY KEY,
+    key_signature VARCHAR(255) UNIQUE NOT NULL,
+    status VARCHAR(50) DEFAULT 'UNUSED',
+    owner_id VARCHAR(100),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    activated_at TIMESTAMP WITH TIME ZONE
 );
 
-CREATE INDEX IF NOT EXISTS idx_activation_keys_creator ON activation_keys(creator_id);
+-- ====================================================================
+-- TABLE 4: distributed_keys (The Bonus & Affiliate Ledger)
+-- ====================================================================
+CREATE TABLE IF NOT EXISTS distributed_keys (
+    id SERIAL PRIMARY KEY,
+    key_code VARCHAR(255) UNIQUE NOT NULL,
+    owner_id BIGINT REFERENCES users(telegram_id) ON DELETE CASCADE,
+    status VARCHAR(50) DEFAULT 'PENDING',
+    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP WITHOUT TIME ZONE,
+    used_by_telegram_id BIGINT REFERENCES users(telegram_id) ON DELETE SET NULL,
+    bonus_deposit_usdc NUMERIC(16, 6) DEFAULT 0.000000,
+    bonus_mining_usdc NUMERIC(16, 6) DEFAULT 0.000000,
+    gifted_by BIGINT REFERENCES users(telegram_id) ON DELETE SET NULL
+);
+
+-- ====================================================================
+-- TABLE 5: historical_ledgers (The Financial Event Tracker)
+-- ====================================================================
+CREATE TABLE IF NOT EXISTS historical_ledgers (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    telegram_id BIGINT REFERENCES users(telegram_id) ON DELETE CASCADE,
+    category VARCHAR(100) NOT NULL,
+    amount NUMERIC(16, 6) NOT NULL,
+    status VARCHAR(50) DEFAULT 'COMPLETED',
+    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ====================================================================
+-- TABLE 6: node_network_balances (The Master Affiliate Metrics)
+-- ====================================================================
+CREATE TABLE IF NOT EXISTS node_network_balances (
+    telegram_id BIGINT PRIMARY KEY REFERENCES users(telegram_id) ON DELETE CASCADE,
+    deposit_rewards_20 NUMERIC(16, 6) DEFAULT 0.000000,
+    lifetime_yields_2 NUMERIC(16, 6) DEFAULT 0.000000
+);
