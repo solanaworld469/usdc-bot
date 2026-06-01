@@ -3,19 +3,20 @@ import { UCreditDisplay } from './UCreditDisplay';
 
 export const LedgerTab = ({ machineId, token }) => {
     const [epochs, setEpochs] = useState([]);
+    const [serverNow, setServerNow] = useState(null);
     const [loading, setLoading] = useState(true);
-    const [expandedMonths, setExpandedMonths] = useState(new Set([1])); // Month 1 open by default
+    const [expandedMonths, setExpandedMonths] = useState(new Set([1]));
 
     useEffect(() => {
         const fetchLedger = async () => {
             try {
-                // Hits the new route we built in Step 2
-                const res = await fetch(`/api/ledger/epochs/${machineId}`, {
+                const res = await fetch(`http://localhost:5000/api/ledger/epochs/${machineId}`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
                 const data = await res.json();
                 if (data.success) {
                     setEpochs(data.epochs);
+                    setServerNow(new Date(data.server_time));
                 }
             } catch (err) {
                 console.error("Ledger fetch fault:", err);
@@ -26,86 +27,114 @@ export const LedgerTab = ({ machineId, token }) => {
         fetchLedger();
     }, [machineId, token]);
 
+    // 🌟 FIXED: Forces the database string into an integer so the click always works
     const toggleMonth = (monthNum) => {
+        const parsedMonth = parseInt(monthNum, 10);
         setExpandedMonths(prev => {
             const newSet = new Set(prev);
-            if (newSet.has(monthNum)) newSet.delete(monthNum);
-            else newSet.add(monthNum);
+            if (newSet.has(parsedMonth)) newSet.delete(parsedMonth);
+            else newSet.add(parsedMonth);
             return newSet;
         });
     };
 
-    if (loading) return <div className="text-center p-4 text-cyan-400">SYNCING LEDGER PROTOCOLS...</div>;
+    if (loading || !serverNow) return <div className="text-center p-4 text-cyan-400 font-mono text-xs animate-pulse">SYNCING TEMPORAL PROTOCOLS...</div>;
 
-    // --- TEMPORAL ENGINE: Calculate what is visible right now ---
-    const now = new Date();
+    const visibleEpochs = epochs.filter(ep => new Date(ep.start_date) <= serverNow);
     
-    // Filter out months that haven't started yet
-    const visibleEpochs = epochs.filter(ep => new Date(ep.start_date) <= now);
-    
-    // Calculate totals from ALL visible history
     const totalClaimed = visibleEpochs.filter(ep => ep.claim_status === 'CLAIMED').reduce((acc, ep) => acc + parseFloat(ep.ucredits_mined), 0);
     const totalUnclaimed = visibleEpochs.filter(ep => ep.claim_status !== 'CLAIMED').reduce((acc, ep) => acc + parseFloat(ep.ucredits_mined), 0);
     const totalLeaked = visibleEpochs.reduce((acc, ep) => acc + parseFloat(ep.ucredits_leaked), 0);
     const cumMint = totalClaimed + totalUnclaimed;
 
+    // 🌟 NEW: Math converter for your UI ($0.50 per uC based on your map)
+    const toUSDC = (amount) => (amount * 0.5).toFixed(2);
+
     return (
-        <div className="flex flex-col space-y-4 text-sm font-mono text-cyan-50">
+        <div className="flex flex-col space-y-4 text-sm font-mono text-cyan-50 mt-4 animate-fadeIn">
             {/* LIFETIME STATS BOX */}
-            <div className="border border-cyan-800 bg-gray-900/50 p-3 rounded">
-                <h3 className="text-cyan-400 mb-2 border-b border-cyan-800 pb-1">📊 TOTAL LIFETIME HARDWARE STATS</h3>
-                <ul className="space-y-1">
-                    <li className="flex justify-between"><span>• Total Claimed:</span> <UCreditDisplay amount={totalClaimed} /></li>
-                    <li className="flex justify-between"><span>• Total Unclaimed:</span> <UCreditDisplay amount={totalUnclaimed} /></li>
-                    <li className="flex justify-between text-red-400"><span>• Total Leaked:</span> <UCreditDisplay amount={totalLeaked} /></li>
-                    <li className="flex justify-between text-green-400"><span>• Cumulative Mint:</span> <UCreditDisplay amount={cumMint} /></li>
+            <div className="border border-cyan-800 bg-[#111317] p-3 rounded-xl shadow-lg relative overflow-hidden">
+                <div className="absolute top-0 left-0 w-1 h-full bg-cyan-500"></div>
+                <h3 className="text-cyan-400 font-bold mb-2 border-b border-gray-800 pb-1.5 text-xs uppercase tracking-wider">📊 TOTAL LIFETIME HARDWARE STATS</h3>
+                <ul className="space-y-1.5 text-xs">
+                    <li className="flex justify-between items-center">
+                        <span className="text-gray-400">• Total Claimed:</span> 
+                        <div className="flex items-center gap-1.5"><UCreditDisplay amount={totalClaimed} className="text-white" /><span className="text-gray-500 font-sans text-[10px]">(${toUSDC(totalClaimed)})</span></div>
+                    </li>
+                    <li className="flex justify-between items-center">
+                        <span className="text-gray-400">• Total Unclaimed:</span> 
+                        <div className="flex items-center gap-1.5"><UCreditDisplay amount={totalUnclaimed} className="text-cyan-200" /><span className="text-gray-500 font-sans text-[10px]">(${toUSDC(totalUnclaimed)})</span></div>
+                    </li>
+                    <li className="flex justify-between items-center text-red-400/90">
+                        <span className="text-gray-400">• Total Leaked:</span> 
+                        <div className="flex items-center gap-1.5"><UCreditDisplay amount={totalLeaked} className="text-red-400" /><span className="text-red-900 font-sans text-[10px]">(${toUSDC(totalLeaked)})</span></div>
+                    </li>
+                    <li className="flex justify-between items-center text-emerald-400 mt-1 pt-1 border-t border-gray-800">
+                        <span className="text-gray-400">• Cumulative Mint:</span> 
+                        <div className="flex items-center gap-1.5"><UCreditDisplay amount={cumMint} className="text-emerald-400" /><span className="text-emerald-800 font-sans text-[10px]">(${toUSDC(cumMint)})</span></div>
+                    </li>
                 </ul>
-                <button className="w-full mt-3 py-2 bg-cyan-700/50 hover:bg-cyan-600 text-white rounded border border-cyan-500 font-bold transition-colors">
-                    💰 CLAIM ALL AVAILABLE SETTLED CYCLES
+                <button className="w-full mt-3.5 py-2.5 bg-gradient-to-r from-cyan-900 to-blue-900 hover:from-cyan-800 hover:to-blue-800 text-cyan-100 rounded border border-cyan-700/50 font-bold tracking-wider text-[10px] uppercase transition-all shadow-[0_0_15px_rgba(6,182,212,0.15)] active:scale-[0.98]">
+                    💰 CLAIM ALL AVAILABLE SETTLED CYCLES: ${toUSDC(totalUnclaimed)}
                 </button>
             </div>
 
             {/* MONTHLY ROLLOUT LIST */}
             <div className="space-y-2">
                 {visibleEpochs.map((epoch) => {
-                    const isExpanded = expandedMonths.has(epoch.month_number);
+                    const monthNum = parseInt(epoch.month_number, 10);
+                    const isExpanded = expandedMonths.has(monthNum);
                     const endDate = new Date(epoch.end_date);
-                    const daysLeft = Math.max(0, Math.ceil((endDate - now) / (1000 * 60 * 60 * 24)));
+                    const daysLeft = Math.max(0, Math.ceil((endDate - serverNow) / (1000 * 60 * 60 * 24)));
                     
                     let statusBadge = epoch.claim_status;
                     if (epoch.claim_status === 'ACCRUING') statusBadge = `${daysLeft} DAYS LEFT`;
 
                     return (
-                        <div key={epoch.id} className="border border-gray-700 rounded bg-black">
+                        <div key={epoch.id} className="border border-gray-800 rounded-lg bg-[#0e1014] overflow-hidden transition-all duration-200">
                             {/* Collapse/Expand Header */}
                             <div 
-                                className="flex justify-between items-center p-2 cursor-pointer hover:bg-gray-800"
+                                className="flex justify-between items-center p-3 cursor-pointer hover:bg-[#161920]"
                                 onClick={() => toggleMonth(epoch.month_number)}
                             >
-                                <span className="text-cyan-300">
-                                    {isExpanded ? '▼' : '▶'} MONTH {epoch.month_number} <span className="text-gray-500 text-xs">(Days {(epoch.month_number - 1) * 30 + 1} - {epoch.month_number * 30})</span>
+                                <span className="text-cyan-300 font-bold text-xs flex items-center gap-2">
+                                    <span className="text-gray-500 text-[10px]">{isExpanded ? '▼' : '▶'}</span> 
+                                    MONTH {monthNum} 
+                                    <span className="text-gray-600 text-[9px] uppercase font-normal ml-1 hidden sm:inline">(Days {(monthNum - 1) * 30 + 1} - {monthNum * 30})</span>
                                 </span>
-                                <span className={`text-xs px-2 py-1 rounded ${epoch.claim_status === 'CLAIMED' ? 'bg-green-900 text-green-300' : 'bg-gray-700 text-gray-300'}`}>
+                                <span className={`text-[9px] px-2 py-0.5 rounded font-bold uppercase tracking-wider ${
+                                    epoch.claim_status === 'CLAIMED' ? 'bg-emerald-950/40 text-emerald-400 border border-emerald-900/30' : 
+                                    epoch.claim_status === 'ACCRUING' ? 'bg-blue-950/40 text-blue-400 border border-blue-900/30' :
+                                    'bg-amber-950/40 text-amber-400 border border-amber-900/30'
+                                }`}>
                                     [ {statusBadge} ]
                                 </span>
                             </div>
 
                             {/* Expanded Data Panel */}
                             {isExpanded && (
-                                <div className="p-3 border-t border-gray-700 bg-gray-900/30">
-                                    <div className="flex justify-between mb-1">
-                                        <span className="text-gray-400">• Total Yield:</span>
-                                        <UCreditDisplay amount={epoch.ucredits_mined} />
+                                <div className="p-3 border-t border-gray-800 bg-[#111317]">
+                                    <div className="flex justify-between mb-2 items-center">
+                                        <span className="text-gray-500 text-[10px] uppercase tracking-wide">• Total Yield:</span>
+                                        <div className="flex items-center gap-1.5">
+                                            <UCreditDisplay amount={epoch.ucredits_mined} className="text-cyan-100" />
+                                            <span className="text-gray-500 font-sans text-[10px]">(${toUSDC(epoch.ucredits_mined)})</span>
+                                            {epoch.claim_status === 'ACCRUING' && <span className="text-[8px] text-blue-400 animate-pulse border border-blue-900 px-1 rounded ml-1">*LIVE*</span>}
+                                        </div>
                                     </div>
-                                    <div className="flex justify-between">
-                                        <span className="text-red-400/80">• Thermal Leakage:</span>
-                                        <UCreditDisplay amount={epoch.ucredits_leaked} className="text-red-400/80" />
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-gray-500 text-[10px] uppercase tracking-wide">• Thermal Leakage:</span>
+                                        <div className="flex items-center gap-1.5">
+                                            <UCreditDisplay amount={epoch.ucredits_leaked} className="text-red-400/80" />
+                                            <span className="text-red-900 font-sans text-[10px]">(${toUSDC(epoch.ucredits_leaked)})</span>
+                                        </div>
                                     </div>
                                 </div>
                             )}
                         </div>
                     );
                 })}
+                
             </div>
         </div>
     );

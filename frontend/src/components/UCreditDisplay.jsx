@@ -1,17 +1,16 @@
 import React from 'react';
 
 export const UCreditDisplay = ({ amount, className = "" }) => {
-    // 1. Ensure it's a number and format strictly to 5 decimal places
     const num = parseFloat(amount) || 0;
     const [whole, decimal] = num.toFixed(5).split('.');
     
-    // 2. Pad the whole number to exactly 4 digits
     const paddedWhole = whole.padStart(4, '0');
 
-    // 3. Render the split UI with the superscript decimal
     return (
-        <span className={`font-mono tracking-wider ${className}`}>
-            {paddedWhole}.<sup className="text-lg font-bold">{decimal}</sup>
+        <span className={`font-mono tracking-wider inline-flex items-baseline ${className}`}>
+            <span className="text-sm">{paddedWhole}.</span>
+            {/* 🌟 FIXED: Changed text-lg to text-[9px] to make it a tiny exponent */}
+            <sup className="text-[9px] font-bold text-gray-400 ml-[1px]">{decimal}</sup>
         </span>
     );
 };

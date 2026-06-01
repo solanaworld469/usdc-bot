@@ -121,3 +121,7 @@ CREATE TABLE IF NOT EXISTS machine_monthly_epochs (
 -- Indexes to ensure the frontend loads the full 6-month ledger instantly
 CREATE INDEX IF NOT EXISTS idx_epochs_machine ON machine_monthly_epochs(machine_id);
 CREATE INDEX IF NOT EXISTS idx_epochs_user ON machine_monthly_epochs(telegram_id);
+
+
+
+

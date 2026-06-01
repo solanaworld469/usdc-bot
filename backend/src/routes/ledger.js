@@ -2,7 +2,6 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../config/db');
 
-// Fetch the 6-month epoch layout for a specific machine
 router.get('/epochs/:machineId', async (req, res) => {
     try {
         const { machineId } = req.params;
@@ -22,7 +21,12 @@ router.get('/epochs/:machineId', async (req, res) => {
         
         const result = await pool.query(query, [machineId]);
         
-        res.json({ success: true, epochs: result.rows });
+        // 🛡️ THE FIX: Inject the un-fakeable server timestamp into the payload
+        res.json({ 
+            success: true, 
+            server_time: new Date().toISOString(), 
+            epochs: result.rows 
+        });
     } catch (error) {
         console.error('[Ledger Route] Fetch Error:', error);
         res.status(500).json({ success: false, message: 'Server error fetching ledger' });

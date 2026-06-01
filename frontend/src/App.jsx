@@ -6,6 +6,7 @@ import FriendsTab from './FriendsTab';
 import DepositModal from './DepositModal';
 import HistoryTab from './HistoryTab';
 import ErrorModal from './ErrorModal';
+import { LedgerTab } from './components/LedgerTab';
 
 // 📡 Real-time fake transaction streaming logs array
 const FAKE_CLAIMS_LOG = [
@@ -23,6 +24,7 @@ const FAKE_CLAIMS_LOG = [
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('home');
+  const [inlineView, setInlineView] = useState('core');
   const [isLoading, setIsLoading] = useState(true); 
   const [isGlobalLocked, setIsGlobalLocked] = useState(false); 
   const [activeError, setActiveError] = useState(null); 
@@ -254,39 +256,46 @@ export default function App() {
 
         {/* 🎛️ COMPACT FIXED STICKY CHASSIS */}
         {activeTab === 'home' && (
-          <div className="pt-1.5 pb-1 px-4 flex flex-col space-y-0.5 border-b border-gray-950 bg-[#0a0b0d]">
-            <label className="text-[8px] font-mono font-bold text-gray-500 uppercase tracking-widest pl-0.5">Active Core Engine</label>
-            <div className="max-w-[170px] mt-0.5">
+          <div className="pt-2 pb-2 px-4 flex justify-between items-end border-b border-gray-950 bg-[#0a0b0d]">
+            {/* LEFT: Machine Dropdown (Stays visible in both views) */}
+            <div className="w-[55%]">
+              <label className="text-[8px] font-mono font-bold text-gray-500 uppercase tracking-widest pl-0.5 mb-0.5 block">Active Target</label>
               {ownedCoils.length > 0 ? (
                 <select
                   value={selectedCoilIndex}
-                  onChange={(e) => {
-                    setSelectedCoilIndex(parseInt(e.target.value));
-                    setUCredits(0); 
-                  }}
+                  onChange={(e) => { setSelectedCoilIndex(parseInt(e.target.value)); setUCredits(0); }}
                   className="bg-[#14171d] border border-gray-800/80 rounded-lg px-2 py-1 text-[11px] font-mono font-bold text-cyan-400 outline-none cursor-pointer appearance-none w-full"
                   style={{ backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2322d3ee' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'></polyline></svg>")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center', backgroundSize: '12px', paddingRight: '24px' }}
                 >
                   {ownedCoils.map((coil, index) => (
-                    <option key={coil.id} value={index} className="bg-[#0e1014] text-white">
-                      Coil #{index + 1}: {coil.name}
-                    </option>
+                    <option key={coil.id} value={index} className="bg-[#0e1014] text-white">Coil #{index + 1}: {coil.name}</option>
                   ))}
                 </select>
               ) : (
-                <div className="inline-flex items-center space-x-1.5 bg-[#14171d] border border-dashed border-gray-800/80 px-2 py-0.5 rounded-md">
+                <div className="inline-flex items-center space-x-1.5 bg-[#14171d] border border-dashed border-gray-800/80 px-2 py-0.5 rounded-md w-full">
                   <span className="text-[10px] text-amber-500">⚠️</span>
-                  <span className="font-mono text-[9px] font-semibold text-gray-500 uppercase tracking-tight">No Coils Deployed</span>
+                  <span className="font-mono text-[9px] font-semibold text-gray-500 uppercase tracking-tight">No Coils</span>
                 </div>
               )}
             </div>
+            
+            {/* RIGHT: The View Swap Button */}
+            <div className="w-[42%] flex justify-end">
+              <button 
+                onClick={() => setInlineView(inlineView === 'core' ? 'ledger' : 'core')}
+                className="text-[9px] font-mono text-cyan-400 hover:text-cyan-300 font-bold tracking-wider uppercase border border-cyan-900/50 bg-[#111317] px-2 py-1.5 rounded flex items-center transition-colors"
+              >
+                <span className="mr-1.5 text-cyan-500">≡</span> {inlineView === 'core' ? 'MINING HISTORY' : 'CORE ENGINE'}
+              </button>
+            </div>
           </div>
         )}
+
       </header>
 
       {/* 🧭 VIEWPORT SCROLLABLE BODY */}
       <main className="flex-grow overflow-y-auto pb-20 scrollbar-none [&::-webkit-scrollbar]:hidden">
-        {activeTab === 'home' && (
+        {activeTab === 'home' && inlineView === 'core' && (
           <div className="w-full flex flex-col min-h-full">
             
             {/* CENTRAL MINING CORE PIE */}
@@ -366,7 +375,7 @@ export default function App() {
 
               <div className="grid grid-cols-2 gap-3">
                 <button 
-                  onClick={handleClaimRevenue}
+                  onClick={() => setInlineView('ledger')} // 🌟 Fast-travels to the ledger
                   className="bg-[#181b22] hover:bg-[#1f232d] text-white py-3 rounded-xl font-bold text-xs tracking-wider uppercase border border-gray-800 transition-colors"
                 >
                   📥 Claim Revenue
@@ -389,11 +398,12 @@ export default function App() {
                       <h4 className="text-xs font-bold font-mono text-gray-200">${vaultUSDC.toFixed(2)} USDC</h4>
                     </div>
                   </div>
+
                   <div className="text-right">
                     <p className="text-[9px] font-mono text-red-500 uppercase tracking-wider">Unmined Leakage</p>
-                    <h5 className="text-[11px] font-bold font-mono text-red-400">
-                      {unminedLoss > 0 ? `${(unminedLoss / 1000000).toFixed(4)} USDC` : '0.0000'}
-                    </h5>
+                    {/* 🌟 Updates Leakage to match Vault styling with uC and USDC */}
+                    <h4 className="text-xs font-bold font-mono text-red-400">{unminedLoss > 0 ? (unminedLoss).toFixed(5) : '0.00000'} <span className="text-[10px]">uC</span></h4>
+                    <p className="text-[9px] font-mono text-red-500/70">≈ ${unminedLoss > 0 ? (unminedLoss / 1000000).toFixed(4) : '0.0000'} USDC</p>
                   </div>
                 </div>
 
@@ -410,6 +420,21 @@ export default function App() {
             </div>
           </div>
         )}
+
+        {/* VIEW B: THE INLINE LEDGER REVEAL */}
+        {activeTab === 'home' && inlineView === 'ledger' && (
+          <div className="w-full flex flex-col min-h-full px-4 pb-4 bg-[#0a0b0d]">
+             {activeCoil ? (
+                 <LedgerTab machineId={activeCoil.id} token="999999999" />
+             ) : (
+                 <div className="text-center mt-12 bg-[#111317] border border-gray-900 rounded-xl p-6">
+                    <span className="text-2xl opacity-50 block mb-2">🕳️</span>
+                    <p className="text-xs font-mono text-gray-500 uppercase tracking-widest">No Active Coils Deployed</p>
+                 </div>
+             )}
+          </div>
+        )}
+
 
         {activeTab === 'hardware' && <HardwareTab onSelectMachine={(machine) => setSelectedMachine(machine)} />}
         {activeTab === 'friends' && <FriendsTab userBalance={vaultUSDC} onPurchaseSuccess={(cost) => setVaultUSDC(prev => prev - cost)} />}
