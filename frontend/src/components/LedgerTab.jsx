@@ -7,6 +7,7 @@ export const LedgerTab = ({ machineId, token }) => {
     const [loading, setLoading] = useState(true);
     const [expandedMonths, setExpandedMonths] = useState(new Set([1]));
 
+    // 1. FETCH THE PHOTOGRAPH SNAPSHOT
     useEffect(() => {
         const fetchLedger = async () => {
             try {
@@ -27,6 +28,40 @@ export const LedgerTab = ({ machineId, token }) => {
         fetchLedger();
     }, [machineId, token]);
 
+    // 2. 🌟 THE HEARTBEAT ENGINE (Making it tick locally)
+    useEffect(() => {
+        if (epochs.length === 0 || !serverNow) return;
+
+        // Find the specific month that is currently running
+        const liveEpochIndex = epochs.findIndex(ep => ep.claim_status === 'ACCRUING');
+        if (liveEpochIndex === -1) return;
+
+        const liveEpoch = epochs[liveEpochIndex];
+        
+        // Mathematically derive the exact per-second yield rate using the elapsed time
+        const startTime = new Date(liveEpoch.start_date).getTime();
+        const elapsedSecs = Math.max(1, (serverNow.getTime() - startTime) / 1000);
+        const ratePerSec = parseFloat(liveEpoch.ucredits_mined) / elapsedSecs;
+
+        if (ratePerSec <= 0) return;
+
+        // Start the local clock to increment the balance every 1000ms
+        const timer = setInterval(() => {
+            setEpochs(currentEpochs => currentEpochs.map(ep => {
+                if (ep.claim_status === 'ACCRUING') {
+                    return {
+                        ...ep,
+                        ucredits_mined: (parseFloat(ep.ucredits_mined) + ratePerSec).toFixed(6)
+                    };
+                }
+                return ep;
+            }));
+        }, 1000);
+
+        // Kill the clock if the user closes the tab
+        return () => clearInterval(timer);
+    }, [serverNow]); // Only boots up once the snapshot is loaded
+
     const toggleMonth = (monthNum) => {
         const parsedMonth = parseInt(monthNum, 10);
         setExpandedMonths(prev => {
@@ -41,12 +76,12 @@ export const LedgerTab = ({ machineId, token }) => {
 
     const visibleEpochs = epochs.filter(ep => new Date(ep.start_date) <= serverNow);
     
+    // Because these read from the 'epochs' state, they will automatically tick up every second too!
     const totalClaimed = visibleEpochs.filter(ep => ep.claim_status === 'CLAIMED').reduce((acc, ep) => acc + parseFloat(ep.ucredits_mined), 0);
     const totalUnclaimed = visibleEpochs.filter(ep => ep.claim_status !== 'CLAIMED').reduce((acc, ep) => acc + parseFloat(ep.ucredits_mined), 0);
     const totalLeaked = visibleEpochs.reduce((acc, ep) => acc + parseFloat(ep.ucredits_leaked), 0);
     const cumMint = totalClaimed + totalUnclaimed;
 
-    // 🌟 FIXED: 2 uCredits = 1 USDC (Divide by 2)
     const toUSDC = (amount) => (parseFloat(amount) / 2).toFixed(2);
 
     return (
@@ -90,7 +125,8 @@ export const LedgerTab = ({ machineId, token }) => {
                     if (epoch.claim_status === 'ACCRUING') statusBadge = `${daysLeft} DAYS LEFT`;
 
                     return (
-                        <div key={epoch.id} className="border border-gray-800 rounded-lg bg-[#0e1014] overflow-hidden transition-all duration-200">
+                        // 🌟 FIXED: Swapped epoch.id to epoch.month_number to kill the React warning!
+                        <div key={epoch.month_number} className="border border-gray-800 rounded-lg bg-[#0e1014] overflow-hidden transition-all duration-200">
                             {/* Collapse/Expand Header */}
                             <div 
                                 className="flex justify-between items-center p-3 cursor-pointer hover:bg-[#161920]"

@@ -13,22 +13,22 @@ export default function MachineModal({
   const [activationCode, setActivationCode] = useState('');
   const [showActivationGate, setShowActivationGate] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
-  const [successMsg, setSuccessMsg] = useState(''); // 🌟 NEW: Tracks success state
+  const [successMsg, setSuccessMsg] = useState(''); 
   const [isProcessing, setIsProcessing] = useState(false);
 
   if (!machine) return null;
 
   const roiPercentage = getRoiPercentage(machine.leaseDays);
-
   const basePriceUsdc = parseFloat(machine.priceUsdc);
 
   if (isNaN(basePriceUsdc) || basePriceUsdc <= 0) {
     throw new Error("pricing data corrupted Message Support");
   }
 
-  const totalYieldUsdc = basePriceUsdc * (roiPercentage / 100);
-
-  const dailyYieldUsdc = totalYieldUsdc / machine.leaseDays;
+  // 🌟 FIXED MATH: Calculates daily yield, then projects it across the 180-day lifespan
+  const cycleYieldUsdc = basePriceUsdc * (roiPercentage / 100);
+  const dailyYieldUsdc = cycleYieldUsdc / machine.leaseDays;
+  const totalYieldUsdc = dailyYieldUsdc * 180; 
   
   const netAllocFee = basePriceUsdc * 0.015;
   const totalCostUsdc = basePriceUsdc + netAllocFee;
@@ -45,7 +45,7 @@ export default function MachineModal({
     setShowActivationGate(true);
   };
 
-const handleVerifyAndDeploy = async () => {
+  const handleVerifyAndDeploy = async () => {
     if (!activationCode.trim()) {
       setErrorMsg("Please enter an activation key.");
       return;
@@ -55,15 +55,9 @@ const handleVerifyAndDeploy = async () => {
     setErrorMsg(''); 
 
     try {
-      // 1. Hand the key up to App.jsx so IT can do the backend transaction
       await onConfirmPurchase(machine.id, machine.leaseDays, activationCode.trim().toUpperCase());
-      
-      // 2. Show the glowing emerald success screen!
       setSuccessMsg("Hardware deployed. Core ignition sequence ready.");
-      
     } catch (err) {
-      // 🔒 MEMORY LOCKED: Stripped `err.message` completely. 
-      // Zero chance of a system leak reaching the user interface.
       setErrorMsg('Invalid network activation key signature. Check and try again.');
     } finally {
       setIsProcessing(false);
@@ -74,11 +68,9 @@ const handleVerifyAndDeploy = async () => {
     <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fadeIn">
       <div className={`w-full max-w-sm bg-[#111318] border rounded-3xl p-6 relative text-sm shadow-2xl transition-all ${successMsg ? 'border-emerald-900/50 shadow-[0_0_30px_rgba(16,185,129,0.1)]' : 'border-gray-900'}`}>
         
-        {/* Hide the close X if we are on the success screen so they must click acknowledge */}
         {!successMsg && <button onClick={onClose} className="absolute top-4 right-4 text-gray-500 hover:text-white text-lg transition-colors">✕</button>}
 
         {successMsg ? (
-          // 🌟 THE NEW IN-APP SUCCESS MODAL VIEW
           <div className="text-center space-y-5 py-4 animate-slideUp">
             <div className="mx-auto w-16 h-16 rounded-full bg-emerald-950/40 flex items-center justify-center border border-emerald-900/50">
               <span className="text-3xl text-emerald-400">✅</span>
@@ -101,7 +93,8 @@ const handleVerifyAndDeploy = async () => {
             </button>
           </div>
         ) : !showActivationGate ? (
-          // STAGE 1: OVERVIEW
+          
+          // 🌟 STAGE 1: OVERVIEW (Your specific layout)
           <div className="space-y-6">
             <div className="text-center space-y-2">
               <h3 className="text-lg font-bold tracking-wide text-white font-mono">{machine.name}</h3>
@@ -113,7 +106,7 @@ const handleVerifyAndDeploy = async () => {
             <div className="bg-[#161920] border border-gray-900 rounded-xl p-4 space-y-3 font-mono text-xs">
               <div className="flex justify-between">
                 <span className="text-gray-500">Contract Lifecycle</span>
-                <span className="text-white font-bold">1-Year Fixed Lease</span>
+                <span className="text-red-400 font-bold">180 Days (6 Months)</span>
               </div>
 
               <div className="flex justify-between border-b border-gray-800/40 pb-2">
@@ -155,6 +148,7 @@ const handleVerifyAndDeploy = async () => {
             </button>
           </div>
         ) : (
+          
           // STAGE 2: KEY ENTRY
           <div className="space-y-5 py-2">
             <div className="text-center space-y-1 border-b border-gray-900/60 pb-4">
