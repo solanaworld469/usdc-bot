@@ -27,7 +27,6 @@ export const LedgerTab = ({ machineId, token }) => {
         fetchLedger();
     }, [machineId, token]);
 
-    // 🌟 FIXED: Forces the database string into an integer so the click always works
     const toggleMonth = (monthNum) => {
         const parsedMonth = parseInt(monthNum, 10);
         setExpandedMonths(prev => {
@@ -47,8 +46,8 @@ export const LedgerTab = ({ machineId, token }) => {
     const totalLeaked = visibleEpochs.reduce((acc, ep) => acc + parseFloat(ep.ucredits_leaked), 0);
     const cumMint = totalClaimed + totalUnclaimed;
 
-    // 🌟 NEW: Math converter for your UI ($0.50 per uC based on your map)
-    const toUSDC = (amount) => (amount * 0.5).toFixed(2);
+    // 🌟 FIXED: 2 uCredits = 1 USDC (Divide by 2)
+    const toUSDC = (amount) => (parseFloat(amount) / 2).toFixed(2);
 
     return (
         <div className="flex flex-col space-y-4 text-sm font-mono text-cyan-50 mt-4 animate-fadeIn">
@@ -134,7 +133,6 @@ export const LedgerTab = ({ machineId, token }) => {
                         </div>
                     );
                 })}
-                
             </div>
         </div>
     );

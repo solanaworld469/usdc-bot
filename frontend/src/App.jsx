@@ -7,6 +7,7 @@ import DepositModal from './DepositModal';
 import HistoryTab from './HistoryTab';
 import ErrorModal from './ErrorModal';
 import { LedgerTab } from './components/LedgerTab';
+import { UCreditDisplay } from './components/UCreditDisplay';
 
 // 📡 Real-time fake transaction streaming logs array
 const FAKE_CLAIMS_LOG = [
@@ -304,12 +305,16 @@ export default function App() {
               {/* CORE BALANCES METRIC PANEL */}
               <div className="text-center space-y-0.5 mb-5 z-10">
                 <p className="text-[9px] font-bold tracking-[0.15em] text-gray-500 uppercase">Mined Assets Accumulator</p>
-                <h1 className="text-3xl font-bold font-mono text-white tracking-wide">
-                  {uCredits.toFixed(4)} <span className="text-xs text-cyan-500 font-sans font-normal">uCredits</span>
-                </h1>
-                <p className="text-xs text-gray-400 font-medium font-mono">≈ ${displayUsdcBalance} USDC</p>
+                
+                {/* 🌟 FIXED: Swapped raw text for the formatting engine to force leading zeros */}
+                <div className="flex justify-center items-baseline space-x-2">
+                  <UCreditDisplay amount={uCredits} className="text-4xl text-white font-bold" />
+                  <span className="text-xs text-cyan-500 font-sans font-normal">uCredits</span>
+                </div>
+                
+                {/* 🌟 FIXED: The strict 2 uC = $1 USDC economy rule */}
+                <p className="text-xs text-gray-400 font-medium font-mono">≈ ${(parseFloat(uCredits) / 2).toFixed(5)} USDC</p>
               </div>
-
               {/* INTERACTIVE GLOW RING */}
               <div 
                 onClick={handleCoreIgnition}
@@ -401,10 +406,17 @@ export default function App() {
 
                   <div className="text-right">
                     <p className="text-[9px] font-mono text-red-500 uppercase tracking-wider">Unmined Leakage</p>
-                    {/* 🌟 Updates Leakage to match Vault styling with uC and USDC */}
-                    <h4 className="text-xs font-bold font-mono text-red-400">{unminedLoss > 0 ? (unminedLoss).toFixed(5) : '0.00000'} <span className="text-[10px]">uC</span></h4>
-                    <p className="text-[9px] font-mono text-red-500/70">≈ ${unminedLoss > 0 ? (unminedLoss / 1000000).toFixed(4) : '0.0000'} USDC</p>
+                    
+                    {/* 🌟 FIXED: Applied the formatting engine to the red leakage text */}
+                    <div className="flex justify-end items-baseline space-x-1">
+                       <UCreditDisplay amount={unminedLoss > 0 ? unminedLoss : 0} className="text-xs font-bold text-red-400" />
+                       <span className="text-[10px] text-red-400">uC</span>
+                    </div>
+                    
+                    {/* 🌟 FIXED: The strict 2 uC = $1 USDC economy rule */}
+                    <p className="text-[9px] font-mono text-red-500/70">≈ ${unminedLoss > 0 ? (parseFloat(unminedLoss) / 2).toFixed(5) : '0.00000'} USDC</p>
                   </div>
+
                 </div>
 
                 <div className="grid grid-cols-2 gap-2 pt-0.5">

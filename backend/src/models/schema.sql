@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS user_machines (
     hourly_yield_rate NUMERIC(16, 6) NOT NULL,
     price_usdc NUMERIC(16, 6),
     lease_days INTEGER,
+    expires_at TIMESTAMP WITH TIME ZONE,
     status VARCHAR(50) DEFAULT 'ACTIVE',
     purchased_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     started_at TIMESTAMP WITHOUT TIME ZONE,

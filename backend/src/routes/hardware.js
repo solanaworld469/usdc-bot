@@ -72,6 +72,9 @@ router.post('/rent', authMiddleware, async (req, res) => {
     // 3. Deduct Balance
     const newBalance = currentBalance - totalRequiredCost;
     const serverNow = new Date();
+    
+    // 🌟 FIXED: Strictly calculate 180 days (6 months) from this exact millisecond
+    const expiresAt = new Date(serverNow.getTime() + (180 * 24 * 60 * 60 * 1000));
 
     await client.query(
       'UPDATE users SET vault_balance = $1, last_claim_at = $2 WHERE telegram_id = $3',
@@ -84,7 +87,7 @@ router.post('/rent', authMiddleware, async (req, res) => {
       [telegramId, key_code]
     );
 
-  // 5. 👑 DEPLOY MACHINE: Passing telegramId into both relational columns
+    // 5. 👑 DEPLOY MACHINE: Now explicitly injecting expires_at
     const machineInsertRes = await client.query(
       `INSERT INTO user_machines (
         user_id, 
@@ -96,21 +99,23 @@ router.post('/rent', authMiddleware, async (req, res) => {
         started_at, 
         last_ignition_time, 
         last_claim_at,
+        expires_at,  
         lease_days, 
         status
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'ACTIVE')
-      RETURNING id`, // 👈 CRITICAL: Tells Postgres to return the new UUID
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'ACTIVE')
+      RETURNING id`, 
       [
-        telegramId, // Maps to user_id
-        telegramId, // Maps to telegram_id
+        telegramId, 
+        telegramId, 
         machine_id, 
         machinePrice, 
         hourlyYieldRate, 
-        serverNow, // purchased_at
-        serverNow, // started_at
-        serverNow, // last_ignition_time
-        serverNow, // last_claim_at
-        leaseInt   // lease_days
+        serverNow, 
+        serverNow, 
+        serverNow, 
+        serverNow, 
+        expiresAt,
+        leaseInt   
       ]
     );
 

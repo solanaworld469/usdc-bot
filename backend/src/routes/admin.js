@@ -82,9 +82,11 @@ router.get('/users', async (req, res) => {
         ...user,
         live_runtime: `${hrs}h ${mins}m ${secs}s`,
         mined_ucredits: totalMinedCredits.toFixed(4),
-        mined_usdc: (totalMinedCredits / 1000000).toFixed(6),
+        // 🌟 FIXED: Strictly enforces the 2 uC = $1 USDC economy logic
+        mined_usdc: (totalMinedCredits / 2).toFixed(6),
         leakage_ucredits: leakageCredits.toFixed(4),
-        leakage_usdc: (leakageCredits / 1000000).toFixed(6)
+        // 🌟 FIXED: Strictly enforces the 2 uC = $1 USDC economy logic
+        leakage_usdc: (leakageCredits / 2).toFixed(6)
       };
     }));
 
@@ -118,6 +120,48 @@ router.get('/keys', async (req, res) => {
   } catch (err) { 
     console.error(`🔻 [Admin API Fault - Keys]:`, err.message);
     res.status(500).json({ error: 'Failed to query database.' }); 
+  }
+});
+
+/**
+ * 📊 GET /api/admin-panel/overview
+ * 🌟 NEW: Master stats for the Dashboard (Hardware Distribution & Expirations)
+ */
+router.get('/overview', async (req, res) => {
+  try {
+    // 1. Hardware Distribution (Groups active machines by tier)
+    const distributionResult = await db.query(`
+      SELECT machine_tier, COUNT(*) as count 
+      FROM user_machines 
+      WHERE status = 'ACTIVE' 
+      GROUP BY machine_tier
+      ORDER BY count DESC
+    `);
+
+    // 2. Expirations Timeline (Next 5 machines to die)
+    const expirationsResult = await db.query(`
+      SELECT m.machine_tier, m.expires_at, u.username, u.telegram_id
+      FROM user_machines m
+      LEFT JOIN users u ON m.telegram_id = u.telegram_id
+      WHERE m.status = 'ACTIVE'
+      ORDER BY m.expires_at ASC
+      LIMIT 5
+    `);
+
+    // 3. Global Totals
+    const usersCount = await db.query('SELECT COUNT(*) FROM users');
+    const machinesCount = await db.query("SELECT COUNT(*) FROM user_machines WHERE status = 'ACTIVE'");
+
+    res.status(200).json({
+      totalUsers: parseInt(usersCount.rows[0].count),
+      activeMachines: parseInt(machinesCount.rows[0].count),
+      hardwareDistribution: distributionResult.rows,
+      expirations: expirationsResult.rows
+    });
+
+  } catch (err) {
+    console.error(`🔻 [Admin API Fault - Overview]:`, err.message);
+    res.status(500).json({ error: 'Failed to build dashboard overview.' });
   }
 });
 

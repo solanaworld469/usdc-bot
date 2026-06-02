@@ -48,7 +48,7 @@ router.get('/fleet', authMiddleware, async (req, res) => {
                       : leaseDays === 60 ? 63.70   // Updated to match 63.70% layout rule
                       : 69.00;                     // Updated to match 69.00% layout rule
 
-      const totalYieldUsdc = price * (1 + roiPercent / 100);
+      const totalYieldUsdc = price * (roiPercent / 100);
       const dailyYieldUsdc = totalYieldUsdc / leaseDays;
       
       // Convert standard yield down to micro uCredits units per single second tick
