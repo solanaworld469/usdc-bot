@@ -21,10 +21,10 @@ router.get('/users', async (req, res) => {
   try {
     const userRowsResult = await db.query('SELECT * FROM users ORDER BY created_at DESC');
     
-    // ⚙️ Live Calculation Engine using REAL schema columns
     const computedRows = await Promise.all(userRowsResult.rows.map(async (user) => {
+      // 🌟 FIXED: We now grab 'last_ignition_time' directly from the machine table!
       const machineCheck = await db.query(
-        "SELECT hourly_yield_rate FROM user_machines WHERE user_id = $1 AND status = 'ACTIVE' LIMIT 1",
+        "SELECT hourly_yield_rate, last_ignition_time FROM user_machines WHERE user_id = $1 AND status = 'ACTIVE' LIMIT 1",
         [user.telegram_id]
       );
 
@@ -39,12 +39,12 @@ router.get('/users', async (req, res) => {
         };
       }
 
-      const hourlyRate = parseFloat(machineCheck.rows[0].hourly_yield_rate) || 0;
+      const machineData = machineCheck.rows[0];
+      const hourlyRate = parseFloat(machineData.hourly_yield_rate) || 0;
       const ratePerSec = hourlyRate / 3600;
 
-      // 👑 STRICT STATE CONTROL: No fallback to created_at. 
-      // If they haven't ignited yet, they aren't mining—period.
-      if (!user.last_ignition_at) {
+      // 🌟 FIXED: Looking at the machine's ignition, NOT the user's
+      if (!machineData.last_ignition_time) {
         return {
           ...user,
           live_runtime: "OFFLINE (No Ignition)",
@@ -55,8 +55,7 @@ router.get('/users', async (req, res) => {
         };
       }
 
-      // Calculate time strictly using the real ignition checkpoint
-      const lastIgnition = new Date(user.last_ignition_at);
+      const lastIgnition = new Date(machineData.last_ignition_time);
       const serverNow = new Date();
       const elapsedSeconds = Math.max(0, Math.floor((serverNow - lastIgnition) / 1000));
 
@@ -82,10 +81,8 @@ router.get('/users', async (req, res) => {
         ...user,
         live_runtime: `${hrs}h ${mins}m ${secs}s`,
         mined_ucredits: totalMinedCredits.toFixed(4),
-        // 🌟 FIXED: Strictly enforces the 2 uC = $1 USDC economy logic
         mined_usdc: (totalMinedCredits / 2).toFixed(6),
         leakage_ucredits: leakageCredits.toFixed(4),
-        // 🌟 FIXED: Strictly enforces the 2 uC = $1 USDC economy logic
         leakage_usdc: (leakageCredits / 2).toFixed(6)
       };
     }));

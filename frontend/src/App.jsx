@@ -51,7 +51,7 @@ export default function App() {
   const [showDepositModal, setShowDepositModal] = useState(false);
 
   const activeCoil = ownedCoils[selectedCoilIndex] || null;
-  const currentPerSecondRate = activeCoil ? parseFloat(activeCoil.ucredits_per_sec) : 0.0000;
+  const currentPerSecondRate = activeCoil ? (parseFloat(activeCoil.ucredits_per_sec || 0)) : 0.0000;
   const displayUsdcBalance = (uCredits / 1000000).toFixed(6);
 
   /**
@@ -114,13 +114,15 @@ export default function App() {
         const activeFleets = fleetResponse.data.fleet || [];
         setOwnedCoils(activeFleets);
 
-        if (activeFleets.length > 0 && profile.last_claim_at) {
-          const lastClaimTime = new Date(profile.last_claim_at);
+        // 🌟 FIXED: Keeping the accurate ignition time, but returning to the correct speed variable!
+        if (activeFleets.length > 0 && activeFleets[0].last_ignition_time) {
+          const lastIgnitionTime = new Date(activeFleets[0].last_ignition_time);
           const serverNow = new Date();
-          const elapsedSeconds = Math.max(0, Math.floor((serverNow - lastClaimTime) / 1000));
+          const elapsedSeconds = Math.max(0, Math.floor((serverNow - lastIgnitionTime) / 1000));
           
-          const initialRate = parseFloat(activeFleets[0].ucredits_per_sec) || 0;
-          setUCredits(elapsedSeconds * initialRate);
+          const initialRatePerSec = parseFloat(activeFleets[0].ucredits_per_sec) || 0;
+          
+          setUCredits(elapsedSeconds * initialRatePerSec);
           setMiningState(elapsedSeconds > 0 ? 'ACTIVE' : 'IDLE');
         }
 

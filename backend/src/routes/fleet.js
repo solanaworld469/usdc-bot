@@ -21,6 +21,7 @@ router.get('/fleet', authMiddleware, async (req, res) => {
   const telegramId = req.user.telegram_id;
 
   try {
+    // 🌟 FIXED: Added 'last_ignition_time' so the frontend knows exactly when to start counting
     const queryStr = `
     SELECT 
         id, 
@@ -30,6 +31,7 @@ router.get('/fleet', authMiddleware, async (req, res) => {
         lease_days, 
         hourly_yield_rate, 
         purchased_at, 
+        last_ignition_time,
         expires_at, 
         status 
     FROM user_machines 
@@ -40,20 +42,13 @@ router.get('/fleet', authMiddleware, async (req, res) => {
     const result = await db.query(queryStr, [telegramId]);
 
     const activeFleet = result.rows.map(row => {
-      const price = parseFloat(row.price_usdc); // default fallback if unassigned
+      const price = parseFloat(row.price_usdc); 
       const leaseDays = parseInt(row.lease_days);
       
-      // 🌟 Updated backend fleet velocity calculations matching the new lower ROI rates
-      const roiPercent = leaseDays === 30 ? 60.76 
-                      : leaseDays === 60 ? 63.70   // Updated to match 63.70% layout rule
-                      : 69.00;                     // Updated to match 69.00% layout rule
-
-      const totalYieldUsdc = price * (roiPercent / 100);
-      const dailyYieldUsdc = totalYieldUsdc / leaseDays;
-      
-      // Convert standard yield down to micro uCredits units per single second tick
-      const totalSecondsInLease = leaseDays * 86400;
-      const uCreditsPerSec = (totalYieldUsdc * 1000000) / totalSecondsInLease;
+      // 🌟 FIXED: We extract the raw database hourly rate and divide by 3600 seconds
+      // No more multiplying by 1,000,000!
+      const hourlyRate = parseFloat(row.hourly_yield_rate) || 0;
+      const truePerSecondRate = hourlyRate / 3600;
 
       return {
           id: row.id,
@@ -62,8 +57,8 @@ router.get('/fleet', authMiddleware, async (req, res) => {
           price_usdc: price,       
           lease_days: leaseDays,   
           expires_at: row.expires_at,
-          daily_yield_usdc: dailyYieldUsdc,
-          ucredits_per_sec: uCreditsPerSec.toFixed(6)
+          last_ignition_time: row.last_ignition_time, // Passed securely to App.jsx
+          ucredits_per_sec: truePerSecondRate.toFixed(8) // Perfectly slow, mathematically flawless
       };
     });
 

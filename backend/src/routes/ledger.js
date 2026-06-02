@@ -6,6 +6,10 @@ router.get('/epochs/:machineId', async (req, res) => {
     try {
         const { machineId } = req.params;
         
+        // 🌟 FIXED: Grab the exact machine speed directly from the database
+        const machineResult = await pool.query('SELECT hourly_yield_rate FROM user_machines WHERE id = $1', [machineId]);
+        const hourlyRate = machineResult.rows.length > 0 ? parseFloat(machineResult.rows[0].hourly_yield_rate) : 0;
+
         const query = `
             SELECT 
                 month_number, 
@@ -21,10 +25,10 @@ router.get('/epochs/:machineId', async (req, res) => {
         
         const result = await pool.query(query, [machineId]);
         
-        // 🛡️ THE FIX: Inject the un-fakeable server timestamp into the payload
         res.json({ 
             success: true, 
             server_time: new Date().toISOString(), 
+            hourly_yield_rate: hourlyRate, // 👈 INJECTED HERE
             epochs: result.rows 
         });
     } catch (error) {
