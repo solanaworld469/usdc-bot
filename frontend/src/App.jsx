@@ -315,7 +315,7 @@ export default function App() {
                 </div>
                 
                 {/* 🌟 FIXED: The strict 2 uC = $1 USDC economy rule */}
-                <p className="text-xs text-gray-400 font-medium font-mono">≈ ${(parseFloat(uCredits) / 2).toFixed(5)} USDC</p>
+                <p className="text-xs text-gray-400 font-medium font-mono">≈ ${(parseFloat(uCredits) / 2000).toFixed(5)} USDC</p>
               </div>
               {/* INTERACTIVE GLOW RING */}
               <div 
@@ -416,7 +416,7 @@ export default function App() {
                     </div>
                     
                     {/* 🌟 FIXED: The strict 2 uC = $1 USDC economy rule */}
-                    <p className="text-[9px] font-mono text-red-500/70">≈ ${unminedLoss > 0 ? (parseFloat(unminedLoss) / 2).toFixed(5) : '0.00000'} USDC</p>
+                    <p className="text-[9px] font-mono text-red-500/70">≈ ${unminedLoss > 0 ? (parseFloat(unminedLoss) / 2000).toFixed(5) : '0.00000'} USDC</p>
                   </div>
 
                 </div>

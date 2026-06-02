@@ -3,7 +3,6 @@ const router = express.Router();
 const db = require('../config/db');
 const authMiddleware = require('../middlewares/auth');
 
-// Simple metadata dictionary matching frontend display expectations
 const nameMap = {
   rig_1: 'SOL Core',
   rig_2: 'SOL Flux',
@@ -15,13 +14,11 @@ const nameMap = {
 
 /**
  * 🎛️ GET /api/hardware/fleet
- * Fetches user's actively running hardware nodes mapped exactly to your database architecture
  */
 router.get('/fleet', authMiddleware, async (req, res) => {
   const telegramId = req.user.telegram_id;
 
   try {
-    // 🌟 FIXED: Added 'last_ignition_time' so the frontend knows exactly when to start counting
     const queryStr = `
     SELECT 
         id, 
@@ -45,10 +42,10 @@ router.get('/fleet', authMiddleware, async (req, res) => {
       const price = parseFloat(row.price_usdc); 
       const leaseDays = parseInt(row.lease_days);
       
-      // 🌟 FIXED: We extract the raw database hourly rate and divide by 3600 seconds
-      // No more multiplying by 1,000,000!
-      const hourlyRate = parseFloat(row.hourly_yield_rate) || 0;
-      const truePerSecondRate = hourlyRate / 3600;
+      const hourlyRateUsdc = parseFloat(row.hourly_yield_rate) || 0;
+      
+      // 🌟 FIXED MATH: Convert hourly USDC to hourly uCredits (* 2000), then down to a single second (/ 3600)
+      const uCreditsPerSec = (hourlyRateUsdc * 2000) / 3600;
 
       return {
           id: row.id,
@@ -57,8 +54,8 @@ router.get('/fleet', authMiddleware, async (req, res) => {
           price_usdc: price,       
           lease_days: leaseDays,   
           expires_at: row.expires_at,
-          last_ignition_time: row.last_ignition_time, // Passed securely to App.jsx
-          ucredits_per_sec: truePerSecondRate.toFixed(8) // Perfectly slow, mathematically flawless
+          last_ignition_time: row.last_ignition_time,
+          ucredits_per_sec: uCreditsPerSec.toFixed(8) 
       };
     });
 

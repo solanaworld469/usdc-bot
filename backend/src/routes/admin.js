@@ -40,8 +40,9 @@ router.get('/users', async (req, res) => {
       }
 
       const machineData = machineCheck.rows[0];
-      const hourlyRate = parseFloat(machineData.hourly_yield_rate) || 0;
-      const ratePerSec = hourlyRate / 3600;
+      
+      const hourlyRateUSDC = parseFloat(machineData.hourly_yield_rate) || 0;
+      const ratePerSecUSDC = hourlyRateUSDC / 3600;
 
       // 🌟 FIXED: Looking at the machine's ignition, NOT the user's
       if (!machineData.last_ignition_time) {
@@ -59,32 +60,37 @@ router.get('/users', async (req, res) => {
       const serverNow = new Date();
       const elapsedSeconds = Math.max(0, Math.floor((serverNow - lastIgnition) / 1000));
 
-      let totalMinedCredits = 0;
-      let leakageCredits = 0;
+      let totalMinedUSDC = 0;
+      let leakageUSDC = 0;
       let activeMinedSeconds = 0;
 
       if (elapsedSeconds <= 90000) { 
         activeMinedSeconds = elapsedSeconds;
-        totalMinedCredits = elapsedSeconds * ratePerSec;
+        totalMinedUSDC = elapsedSeconds * ratePerSecUSDC;
       } else {
         activeMinedSeconds = 90000; 
-        totalMinedCredits = 90000 * ratePerSec;
+        totalMinedUSDC = 90000 * ratePerSecUSDC;
         const idleOvertimeSeconds = elapsedSeconds - 90000;
-        leakageCredits = idleOvertimeSeconds * (ratePerSec * 0.5);
+        leakageUSDC = idleOvertimeSeconds * (ratePerSecUSDC * 0.5);
       }
 
       const hrs = Math.floor(activeMinedSeconds / 3600);
       const mins = Math.floor((activeMinedSeconds % 3600) / 60);
       const secs = activeMinedSeconds % 60;
 
+      // 🌟 FIXED: Multiply the pure USDC by 2000 to get the exact uCredit display amount
+      const totalMinedUCredits = totalMinedUSDC * 2000;
+      const leakageUCredits = leakageUSDC * 2000;
+
       return {
         ...user,
         live_runtime: `${hrs}h ${mins}m ${secs}s`,
-        mined_ucredits: totalMinedCredits.toFixed(4),
-        mined_usdc: (totalMinedCredits / 2).toFixed(6),
-        leakage_ucredits: leakageCredits.toFixed(4),
-        leakage_usdc: (leakageCredits / 2).toFixed(6)
+        mined_ucredits: totalMinedUCredits.toFixed(4),
+        mined_usdc: totalMinedUSDC.toFixed(6),
+        leakage_ucredits: leakageUCredits.toFixed(4),
+        leakage_usdc: leakageUSDC.toFixed(6)
       };
+      
     }));
 
     return res.status(200).json(computedRows);

@@ -74,7 +74,7 @@ export const LedgerTab = ({ machineId, token }) => {
     const totalLeaked = visibleEpochs.reduce((acc, ep) => acc + parseFloat(ep.ucredits_leaked), 0);
     const cumMint = totalClaimed + totalUnclaimed;
 
-    const toUSDC = (amount) => (parseFloat(amount) / 2).toFixed(2);
+    const toUSDC = (amount) => (parseFloat(amount) / 2000).toFixed(2);
 
     return (
         <div className="flex flex-col space-y-4 text-sm font-mono text-cyan-50 mt-4 animate-fadeIn">
