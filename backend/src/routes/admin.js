@@ -85,10 +85,10 @@ router.get('/users', async (req, res) => {
       return {
         ...user,
         live_runtime: `${hrs}h ${mins}m ${secs}s`,
-        mined_ucredits: totalMinedUCredits.toFixed(4),
-        mined_usdc: totalMinedUSDC.toFixed(6),
-        leakage_ucredits: leakageUCredits.toFixed(4),
-        leakage_usdc: leakageUSDC.toFixed(6)
+        mined_ucredits: totalMinedUCredits.toFixed(5).padStart(10, '0'),
+        mined_usdc: totalMinedUSDC.toFixed(2),
+        leakage_ucredits: leakageUCredits.toFixed(5).padStart(10, '0'),
+        leakage_usdc: leakageUSDC.toFixed(2)
       };
       
     }));

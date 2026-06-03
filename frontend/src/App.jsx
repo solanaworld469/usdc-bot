@@ -43,7 +43,7 @@ export default function App() {
   const [vaultUSDC, setVaultUSDC] = useState(0.00); 
 
   const [miningState, setMiningState] = useState('IDLE'); 
-  const [secondsRemaining, setSecondsRemaining] = useState(86400); 
+  const [secondsRemaining, setSecondsRemaining] = useState(null); 
   const [unminedLoss, setUnminedLoss] = useState(0); 
   const [operatorLevel, setOperatorLevel] = useState('Bronze Operator');
 
@@ -146,21 +146,37 @@ export default function App() {
    */
   useEffect(() => {
     const handleErrorHook = (e) => {
-      setActiveError(e.detail); // 🌟 Automatically sets error state to the passed message
+      setActiveError(e.detail); 
     };
     window.addEventListener('triggerAppError', handleErrorHook);
     return () => window.removeEventListener('triggerAppError', handleErrorHook);
   }, []);  
 
   /**
-   * ⚡ REAL-TIME SYSTEM ENGINE TICKER
+   * ⚡ REAL-TIME SYSTEM ENGINE TICKER (🌟 FIXED: Amnesia-Proof)
    */
   useEffect(() => {
     if (isLoading || miningState !== 'ACTIVE' || !activeCoil) return;
 
     const tickInterval = setInterval(() => {
+      // 1. Keep adding to the uCredits dial smoothly every second
       setUCredits((prev) => prev + currentPerSecondRate);
-      setSecondsRemaining((prev) => (prev <= 1 ? 86400 : prev - 1));
+
+      // 2. Smart Timer Math: Calculate exact time remaining securely from the database stamp
+      if (activeCoil.last_ignition_time) {
+        const ignitionTime = new Date(activeCoil.last_ignition_time).getTime();
+        const now = new Date().getTime();
+        const elapsedTotalSeconds = Math.max(0, Math.floor((now - ignitionTime) / 1000));
+        
+        // 86400 seconds = 24 hours. Modulo gives us seconds into the current day.
+        const secondsIntoCurrentCycle = elapsedTotalSeconds % 86400;
+        const secondsRemaining = 86400 - secondsIntoCurrentCycle;
+        
+        setSecondsRemaining(secondsRemaining);
+      } else {
+        // Fallback for brand new machines before refresh
+        setSecondsRemaining((prev) => (prev <= 1 ? 86400 : prev - 1));
+      }
     }, 1000);
 
     return () => clearInterval(tickInterval);
@@ -188,7 +204,7 @@ export default function App() {
       const response = await axios.post('http://localhost:5000/api/hardware/rent', {
         machine_id: machineId,
         lease_days: leaseDays,
-        key_code: keyCode // 👑 FIXED: Sends the key to the backend!
+        key_code: keyCode 
       }, {
         headers: { Authorization: mockAuthHeader }
       });
@@ -315,7 +331,7 @@ export default function App() {
                 </div>
                 
                 {/* 🌟 FIXED: The strict 2 uC = $1 USDC economy rule */}
-                <p className="text-xs text-gray-400 font-medium font-mono">≈ ${(parseFloat(uCredits) / 2000).toFixed(5)} USDC</p>
+                <p className="text-xs text-gray-400 font-medium font-mono">≈ ${(parseFloat(uCredits) / 2000).toFixed(2)} USDC</p>
               </div>
               {/* INTERACTIVE GLOW RING */}
               <div 
@@ -342,7 +358,12 @@ export default function App() {
                 <span className={`px-4 py-1.5 rounded-full text-[9px] font-mono tracking-wider font-bold border transition-all duration-500 ${
                   miningState === 'ACTIVE' ? 'bg-cyan-950/30 border-cyan-800/40 text-cyan-400' : 'bg-red-950/40 border-red-900/40 text-red-400'
                 }`}>
-                  {miningState === 'ACTIVE' ? `PROCESSING • ${formatTime(secondsRemaining)}` : 'CRITICAL TERMINAL SHUTDOWN • COILS IDLE'}
+
+                  {miningState === 'ACTIVE' 
+                    ? `PROCESSING • ${secondsRemaining !== null ? formatTime(secondsRemaining) : 'LOADING..'}` 
+                    : 'CRITICAL TERMINAL SHUTDOWN • COILS IDLE'
+                  }
+
                 </span>
               </div>
             </div>
@@ -382,7 +403,7 @@ export default function App() {
 
               <div className="grid grid-cols-2 gap-3">
                 <button 
-                  onClick={() => setInlineView('ledger')} // 🌟 Fast-travels to the ledger
+                  onClick={() => setInlineView('ledger')} 
                   className="bg-[#181b22] hover:bg-[#1f232d] text-white py-3 rounded-xl font-bold text-xs tracking-wider uppercase border border-gray-800 transition-colors"
                 >
                   📥 Claim Revenue
@@ -416,7 +437,7 @@ export default function App() {
                     </div>
                     
                     {/* 🌟 FIXED: The strict 2 uC = $1 USDC economy rule */}
-                    <p className="text-[9px] font-mono text-red-500/70">≈ ${unminedLoss > 0 ? (parseFloat(unminedLoss) / 2000).toFixed(5) : '0.00000'} USDC</p>
+                    <p className="text-[9px] font-mono text-red-500/70">≈ ${unminedLoss > 0 ? (parseFloat(unminedLoss) / 2000).toFixed(2) : '0.00'} USDC</p>
                   </div>
 
                 </div>
@@ -439,7 +460,7 @@ export default function App() {
         {activeTab === 'home' && inlineView === 'ledger' && (
           <div className="w-full flex flex-col min-h-full px-4 pb-4 bg-[#0a0b0d]">
              {activeCoil ? (
-                 <LedgerTab machineId={activeCoil.id} token="999999999" />
+                 <LedgerTab machineId={activeCoil.id} token="999999999" activeCoil={activeCoil} />
              ) : (
                  <div className="text-center mt-12 bg-[#111317] border border-gray-900 rounded-xl p-6">
                     <span className="text-2xl opacity-50 block mb-2">🕳️</span>
@@ -448,7 +469,6 @@ export default function App() {
              )}
           </div>
         )}
-
 
         {activeTab === 'hardware' && <HardwareTab onSelectMachine={(machine) => setSelectedMachine(machine)} />}
         {activeTab === 'friends' && <FriendsTab userBalance={vaultUSDC} onPurchaseSuccess={(cost) => setVaultUSDC(prev => prev - cost)} />}

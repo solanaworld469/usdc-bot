@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { UCreditDisplay } from './UCreditDisplay';
 
-export const LedgerTab = ({ machineId, token }) => {
+// 🌟 FIXED: Added activeCoil to props so it receives the secure payload from App.jsx
+export const LedgerTab = ({ machineId, token, activeCoil }) => {
     const [epochs, setEpochs] = useState([]);
     const [serverNow, setServerNow] = useState(null);
     const [machineSpeed, setMachineSpeed] = useState(0);
@@ -18,7 +19,6 @@ export const LedgerTab = ({ machineId, token }) => {
                 if (data.success) {
                     setEpochs(data.epochs);
                     setServerNow(new Date(data.server_time));
-                    // 🌟 FIXED: Store the exact, un-fakeable database speed
                     setMachineSpeed(data.hourly_yield_rate || 0);
                 }
             } catch (err) {
@@ -30,30 +30,13 @@ export const LedgerTab = ({ machineId, token }) => {
         fetchLedger();
     }, [machineId, token]);
 
-    // 🌟 THE TRUE HEARTBEAT ENGINE
+    // 🌟 FIXED THE HEARTBEAT: Instead of fake math, we just tick the clock forward 1 second.
     useEffect(() => {
-        if (epochs.length === 0 || !serverNow || machineSpeed <= 0) return;
-
-        const liveEpochIndex = epochs.findIndex(ep => ep.claim_status === 'ACCRUING');
-        if (liveEpochIndex === -1) return;
-
-        // 🌟 FIXED: Flawless math. No dividing by zero. No guessing based on fractions of a penny.
-        const ratePerSec = machineSpeed / 3600;
-
         const timer = setInterval(() => {
-            setEpochs(currentEpochs => currentEpochs.map(ep => {
-                if (ep.claim_status === 'ACCRUING') {
-                    return {
-                        ...ep,
-                        ucredits_mined: (parseFloat(ep.ucredits_mined) + ratePerSec).toFixed(6)
-                    };
-                }
-                return ep;
-            }));
+            setServerNow(prev => prev ? new Date(prev.getTime() + 1000) : null);
         }, 1000);
-
         return () => clearInterval(timer);
-    }, [serverNow, machineSpeed]); 
+    }, []); 
 
     const toggleMonth = (monthNum) => {
         const parsedMonth = parseInt(monthNum, 10);
@@ -69,9 +52,28 @@ export const LedgerTab = ({ machineId, token }) => {
 
     const visibleEpochs = epochs.filter(ep => new Date(ep.start_date) <= serverNow);
     
-    const totalClaimed = visibleEpochs.filter(ep => ep.claim_status === 'CLAIMED').reduce((acc, ep) => acc + parseFloat(ep.ucredits_mined), 0);
-    const totalUnclaimed = visibleEpochs.filter(ep => ep.claim_status !== 'CLAIMED').reduce((acc, ep) => acc + parseFloat(ep.ucredits_mined), 0);
-    const totalLeaked = visibleEpochs.reduce((acc, ep) => acc + parseFloat(ep.ucredits_leaked), 0);
+    // 🌟 SMART MATH INJECTION: Overrides the DB's 0.00000 with live exact math for the active month
+    const smartVisibleEpochs = visibleEpochs.map(ep => {
+        let smartYield = parseFloat(ep.ucredits_mined) || 0;
+        
+        // If it's the live month, calculate the exact uCredits based on total elapsed seconds
+        if (ep.claim_status === 'ACCRUING' && activeCoil && activeCoil.ucredits_per_sec) {
+            const epochStart = new Date(ep.start_date);
+            const elapsedSeconds = Math.max(0, Math.floor((serverNow - epochStart) / 1000));
+            smartYield = elapsedSeconds * parseFloat(activeCoil.ucredits_per_sec);
+        }
+        
+        return {
+            ...ep,
+            display_mined: smartYield,
+            display_leaked: parseFloat(ep.ucredits_leaked) || 0
+        };
+    });
+
+    // 🌟 FIXED TOTALS: Uses the newly injected 'display_mined' so the lifetime box perfectly matches!
+    const totalClaimed = smartVisibleEpochs.filter(ep => ep.claim_status === 'CLAIMED').reduce((acc, ep) => acc + ep.display_mined, 0);
+    const totalUnclaimed = smartVisibleEpochs.filter(ep => ep.claim_status !== 'CLAIMED').reduce((acc, ep) => acc + ep.display_mined, 0);
+    const totalLeaked = smartVisibleEpochs.reduce((acc, ep) => acc + ep.display_leaked, 0);
     const cumMint = totalClaimed + totalUnclaimed;
 
     const toUSDC = (amount) => (parseFloat(amount) / 2000).toFixed(2);
@@ -107,7 +109,7 @@ export const LedgerTab = ({ machineId, token }) => {
 
             {/* MONTHLY ROLLOUT LIST */}
             <div className="space-y-2">
-                {visibleEpochs.map((epoch) => {
+                {smartVisibleEpochs.map((epoch) => {
                     const monthNum = parseInt(epoch.month_number, 10);
                     const isExpanded = expandedMonths.has(monthNum);
                     const endDate = new Date(epoch.end_date);
@@ -143,16 +145,18 @@ export const LedgerTab = ({ machineId, token }) => {
                                     <div className="flex justify-between mb-2 items-center">
                                         <span className="text-gray-500 text-[10px] uppercase tracking-wide">• Total Yield:</span>
                                         <div className="flex items-center gap-1.5">
-                                            <UCreditDisplay amount={epoch.ucredits_mined} className="text-cyan-100" />
-                                            <span className="text-gray-500 font-sans text-[10px]">(${toUSDC(epoch.ucredits_mined)})</span>
+                                            {/* 🌟 FIXED: Display the smart mathematically calculated values */}
+                                            <UCreditDisplay amount={epoch.display_mined} className="text-cyan-100" />
+                                            <span className="text-gray-500 font-sans text-[10px]">(${toUSDC(epoch.display_mined)})</span>
                                             {epoch.claim_status === 'ACCRUING' && <span className="text-[8px] text-blue-400 animate-pulse border border-blue-900 px-1 rounded ml-1">*LIVE*</span>}
                                         </div>
                                     </div>
                                     <div className="flex justify-between items-center">
                                         <span className="text-gray-500 text-[10px] uppercase tracking-wide">• Thermal Leakage:</span>
                                         <div className="flex items-center gap-1.5">
-                                            <UCreditDisplay amount={epoch.ucredits_leaked} className="text-red-400/80" />
-                                            <span className="text-red-900 font-sans text-[10px]">(${toUSDC(epoch.ucredits_leaked)})</span>
+                                            {/* 🌟 FIXED: Display the smart mathematically calculated values */}
+                                            <UCreditDisplay amount={epoch.display_leaked} className="text-red-400/80" />
+                                            <span className="text-red-900 font-sans text-[10px]">(${toUSDC(epoch.display_leaked)})</span>
                                         </div>
                                     </div>
                                 </div>
