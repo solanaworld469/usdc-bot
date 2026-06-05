@@ -16,79 +16,111 @@ router.use(adminAuth);
 
 /**
  * 👤 GET /api/admin-panel/users
+ * 🌟 FIXED: ADVANCED FLEET PAYLOAD WITH NESTED MACHINE DATA
  */
+const nameMap = {
+  rig_1: 'SOL Core',
+  rig_2: 'SOL Flux',
+  rig_3: 'Siberian Vapor',
+  rig_4: 'SOL Vector',
+  rig_5: 'Hyperion Cluster',
+  rig_6: 'SOL Quantum'
+};
+
 router.get('/users', async (req, res) => {
   try {
     const userRowsResult = await db.query('SELECT * FROM users ORDER BY created_at DESC');
     
     const computedRows = await Promise.all(userRowsResult.rows.map(async (user) => {
-      // 🌟 FIXED: We now grab 'last_ignition_time' directly from the machine table!
+      
+      // Grab every active machine this user owns
       const machineCheck = await db.query(
-        "SELECT hourly_yield_rate, last_ignition_time FROM user_machines WHERE user_id = $1 AND status = 'ACTIVE' LIMIT 1",
+        "SELECT machine_tier, hourly_yield_rate, last_ignition_time FROM user_machines WHERE user_id = $1 AND status = 'ACTIVE' ORDER BY purchased_at ASC",
         [user.telegram_id]
       );
 
+      // If they own 0 machines
       if (machineCheck.rows.length === 0) {
         return {
           ...user,
-          live_runtime: "0h 0m 0s",
-          mined_ucredits: "0.0000",
-          mined_usdc: "0.000000",
-          leakage_ucredits: "0.0000",
-          leakage_usdc: "0.000000"
+          fleet_size: 0,
+          machines: [],
+          total_mined_ucredits: "0000.00000",
+          total_mined_usdc: "0.00",
+          total_leakage_ucredits: "0000.00000",
+          total_leakage_usdc: "0.00"
         };
       }
 
-      const machineData = machineCheck.rows[0];
-      
-      const hourlyRateUSDC = parseFloat(machineData.hourly_yield_rate) || 0;
-      const ratePerSecUSDC = hourlyRateUSDC / 3600;
+      let aggregateMinedUSDC = 0;
+      let aggregateLeakageUSDC = 0;
+      const userMachines = []; // 🌟 NEW: The array that will hold individual machine data!
 
-      // 🌟 FIXED: Looking at the machine's ignition, NOT the user's
-      if (!machineData.last_ignition_time) {
-        return {
-          ...user,
-          live_runtime: "OFFLINE (No Ignition)",
-          mined_ucredits: "0.0000",
-          mined_usdc: "0.000000",
-          leakage_ucredits: "0.0000",
-          leakage_usdc: "0.000000"
-        };
+      // Loop through every machine to calculate exact individual math
+      for (let i = 0; i < machineCheck.rows.length; i++) {
+          const machine = machineCheck.rows[i];
+          const machineName = nameMap[machine.machine_tier] || machine.machine_tier;
+          
+          if (!machine.last_ignition_time) {
+              userMachines.push({
+                  name: `Coil ${i + 1} (${machineName})`,
+                  runtime: "OFFLINE",
+                  mined_ucredits: "0000.00000",
+                  mined_usdc: "0.00",
+                  leakage_ucredits: "0000.00000",
+                  leakage_usdc: "0.00"
+              });
+              continue;
+          }
+
+          const hourlyRateUSDC = parseFloat(machine.hourly_yield_rate) || 0;
+          const ratePerSecUSDC = hourlyRateUSDC / 3600;
+
+          const lastIgnition = new Date(machine.last_ignition_time);
+          const serverNow = new Date();
+          const elapsedSeconds = Math.max(0, Math.floor((serverNow - lastIgnition) / 1000));
+
+          let machineMinedUSDC = 0;
+          let machineLeakageUSDC = 0;
+
+          if (elapsedSeconds <= 90000) { 
+              machineMinedUSDC = elapsedSeconds * ratePerSecUSDC;
+          } else {
+              machineMinedUSDC = 90000 * ratePerSecUSDC;
+              const idleOvertimeSeconds = elapsedSeconds - 90000;
+              machineLeakageUSDC = idleOvertimeSeconds * (ratePerSecUSDC * 0.5);
+          }
+
+          aggregateMinedUSDC += machineMinedUSDC;
+          aggregateLeakageUSDC += machineLeakageUSDC;
+
+          const hrs = Math.floor(elapsedSeconds / 3600).toString().padStart(2, '0');
+          const mins = Math.floor((elapsedSeconds % 3600) / 60).toString().padStart(2, '0');
+          const secs = (elapsedSeconds % 60).toString().padStart(2, '0');
+
+          // Push the exact math for THIS specific machine to the array
+          userMachines.push({
+              name: `Coil ${i + 1} (${machineName})`,
+              runtime: `${hrs}h ${mins}m ${secs}s`,
+              mined_ucredits: (machineMinedUSDC * 2000).toFixed(5).padStart(10, '0'),
+              mined_usdc: machineMinedUSDC.toFixed(2),
+              leakage_ucredits: (machineLeakageUSDC * 2000).toFixed(5).padStart(10, '0'),
+              leakage_usdc: machineLeakageUSDC.toFixed(2)
+          });
       }
 
-      const lastIgnition = new Date(machineData.last_ignition_time);
-      const serverNow = new Date();
-      const elapsedSeconds = Math.max(0, Math.floor((serverNow - lastIgnition) / 1000));
-
-      let totalMinedUSDC = 0;
-      let leakageUSDC = 0;
-      let activeMinedSeconds = 0;
-
-      if (elapsedSeconds <= 90000) { 
-        activeMinedSeconds = elapsedSeconds;
-        totalMinedUSDC = elapsedSeconds * ratePerSecUSDC;
-      } else {
-        activeMinedSeconds = 90000; 
-        totalMinedUSDC = 90000 * ratePerSecUSDC;
-        const idleOvertimeSeconds = elapsedSeconds - 90000;
-        leakageUSDC = idleOvertimeSeconds * (ratePerSecUSDC * 0.5);
-      }
-
-      const hrs = Math.floor(activeMinedSeconds / 3600);
-      const mins = Math.floor((activeMinedSeconds % 3600) / 60);
-      const secs = activeMinedSeconds % 60;
-
-      // 🌟 FIXED: Multiply the pure USDC by 2000 to get the exact uCredit display amount
-      const totalMinedUCredits = totalMinedUSDC * 2000;
-      const leakageUCredits = leakageUSDC * 2000;
+      // Convert totals to uCredits
+      const totalMinedUCredits = aggregateMinedUSDC * 2000;
+      const totalLeakageUCredits = aggregateLeakageUSDC * 2000;
 
       return {
         ...user,
-        live_runtime: `${hrs}h ${mins}m ${secs}s`,
-        mined_ucredits: totalMinedUCredits.toFixed(5).padStart(10, '0'),
-        mined_usdc: totalMinedUSDC.toFixed(2),
-        leakage_ucredits: leakageUCredits.toFixed(5).padStart(10, '0'),
-        leakage_usdc: leakageUSDC.toFixed(2)
+        fleet_size: userMachines.length,
+        machines: userMachines, // 🌟 Sends the nested array to the frontend
+        total_mined_ucredits: totalMinedUCredits.toFixed(5).padStart(10, '0'),
+        total_mined_usdc: aggregateMinedUSDC.toFixed(2),
+        total_leakage_ucredits: totalLeakageUCredits.toFixed(5).padStart(10, '0'),
+        total_leakage_usdc: aggregateLeakageUSDC.toFixed(2)
       };
       
     }));

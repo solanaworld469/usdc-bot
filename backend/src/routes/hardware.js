@@ -169,4 +169,106 @@ router.post('/rent', authMiddleware, async (req, res) => {
   }
 });
 
+// 🔌 SYSTEM RESET CORE IGNITION ENGINE (WITH LEAKAGE TRAP)
+router.post('/ignite', authMiddleware, async (req, res) => {
+  const { machine_id } = req.body;
+  const telegramId = req.user.telegram_id;
+
+  if (!machine_id) {
+    return res.status(400).json({ error: 'Target machine identifier signature missing.' });
+  }
+
+  const client = await db.pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    // 1. Verify machine and pull the critical timestamp BEFORE we overwrite it
+    const machineCheck = await client.query(
+      `SELECT id, status, last_ignition_time, hourly_yield_rate 
+       FROM user_machines 
+       WHERE id = $1 AND telegram_id = $2 FOR UPDATE`,
+      [machine_id, telegramId]
+    );
+
+    if (machineCheck.rows.length === 0) {
+      throw new Error('MACHINE_NOT_FOUND');
+    }
+
+    const machine = machineCheck.rows[0];
+    const serverNow = new Date();
+    
+    // 🛑 2. THE LEAKAGE TRAP (Calculate the penalty)
+    if (machine.last_ignition_time) {
+      const ignitionTime = new Date(machine.last_ignition_time).getTime();
+      const nowMs = serverNow.getTime();
+      const elapsedSeconds = Math.max(0, Math.floor((nowMs - ignitionTime) / 1000));
+
+      // If they were dead for more than 25 hours (90,000 seconds)
+      if (elapsedSeconds > 90000) {
+        const leakageSeconds = elapsedSeconds - 90000;
+        
+        // Convert hourly rate to per-second rate, apply 50% penalty
+        const ratePerSec = parseFloat(machine.hourly_yield_rate) / 3600;
+        const penaltyUCredits = leakageSeconds * (ratePerSec * 0.5);
+        const penaltyUSDC = penaltyUCredits / 2000; // 2000 uC = $1 USDC
+
+        // 📝 3. PERMANENTLY LOG THE PENALTY ACROSS ALL 3 LEDGERS
+        
+        // Update Machine total
+        await client.query(
+          `UPDATE user_machines SET unmined_loss_pool = unmined_loss_pool + $1 WHERE id = $2`,
+          [penaltyUCredits, machine_id]
+        );
+
+        // Update the specifically active 30-day epoch
+        await client.query(
+          `UPDATE machine_monthly_epochs SET ucredits_leaked = ucredits_leaked + $1 
+           WHERE machine_id = $2 AND claim_status = 'ACCRUING'`,
+          [penaltyUCredits, machine_id]
+        );
+
+        // Update User's lifetime master ledger
+        await client.query(
+          `UPDATE users SET total_usdc_leaked = total_usdc_leaked + $1 WHERE telegram_id = $2`,
+          [penaltyUSDC, telegramId]
+        );
+      }
+    }
+
+    // 🔄 4. RESET THE CLOCK (Only AFTER the penalty is safely saved)
+    await client.query(
+      `UPDATE user_machines 
+       SET last_ignition_time = $1, status = 'ACTIVE' 
+       WHERE id = $2`,
+      [serverNow, machine_id]
+    );
+
+    await client.query('COMMIT');
+
+    return res.status(200).json({
+      success: true,
+      message: 'Coil operational velocity re-established. Thermal penalty securely logged.',
+      ignited_machine: machine_id,
+      last_ignition_time: serverNow
+    });
+
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error(`🔻 [IGNITION HARDWARE FAULT]:`, err.message);
+
+    const safeErrors = {
+      'MACHINE_NOT_FOUND': { status: 404, msg: 'Target terminal node hardware registry mismatch.' }
+    };
+
+    if (safeErrors[err.message]) {
+      return res.status(safeErrors[err.message].status).json({ error: safeErrors[err.message].msg });
+    }
+
+    return res.status(500).json({ error: 'Core engine ignition failure. Please contact support.' });
+  } finally {
+    client.release();
+  }
+});
+
 module.exports = router;

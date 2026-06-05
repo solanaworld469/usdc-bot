@@ -52,21 +52,31 @@ export const LedgerTab = ({ machineId, token, activeCoil }) => {
 
     const visibleEpochs = epochs.filter(ep => new Date(ep.start_date) <= serverNow);
     
-    // 🌟 SMART MATH INJECTION: Overrides the DB's 0.00000 with live exact math for the active month
+    // 🌟 SMART MATH INJECTION: Syncs the Ledger with the exact App.jsx Thermal Cap engine
     const smartVisibleEpochs = visibleEpochs.map(ep => {
         let smartYield = parseFloat(ep.ucredits_mined) || 0;
+        let smartLeakage = parseFloat(ep.ucredits_leaked) || 0;
         
-        // If it's the live month, calculate the exact uCredits based on total elapsed seconds
-        if (ep.claim_status === 'ACCRUING' && activeCoil && activeCoil.ucredits_per_sec) {
-            const epochStart = new Date(ep.start_date);
-            const elapsedSeconds = Math.max(0, Math.floor((serverNow - epochStart) / 1000));
-            smartYield = elapsedSeconds * parseFloat(activeCoil.ucredits_per_sec);
+        // Only apply live ticking math to the currently active month
+        if (ep.claim_status === 'ACCRUING' && activeCoil && activeCoil.last_ignition_time) {
+            const ignitionTime = new Date(activeCoil.last_ignition_time).getTime();
+            const now = serverNow.getTime();
+            const elapsedTotalSeconds = Math.max(0, Math.floor((now - ignitionTime) / 1000));
+
+            // 🛑 Apply the exact 25-hour cap rules from the main engine
+            const activeMiningSeconds = Math.min(elapsedTotalSeconds, 90000);
+            const leakageSeconds = Math.max(0, elapsedTotalSeconds - 90000);
+            const rate = parseFloat(activeCoil.ucredits_per_sec) || 0;
+
+            // Add the live un-settled cycle to the database's settled baseline
+            smartYield += (activeMiningSeconds * rate);
+            smartLeakage += (leakageSeconds * (rate * 0.5));
         }
         
         return {
             ...ep,
             display_mined: smartYield,
-            display_leaked: parseFloat(ep.ucredits_leaked) || 0
+            display_leaked: smartLeakage
         };
     });
 

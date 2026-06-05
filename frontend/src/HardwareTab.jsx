@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { hardcodedRigs, getRoiPercentage } from './pricelist';
 
-export default function HardwareTab({ onSelectMachine }) {
+// 🌟 FIXED: Added ownedCoils prop to receive the user's active fleet data
+export default function HardwareTab({ ownedCoils, onSelectMachine }) {
   const [selectedDuration, setSelectedDuration] = useState(30);
   const roiPercentage = getRoiPercentage(selectedDuration);
   
@@ -70,30 +71,57 @@ export default function HardwareTab({ onSelectMachine }) {
           const totalYieldUsdc = rig.priceUsdc * (roiPercentage / 100);
           const dailyYieldUsdc = totalYieldUsdc / selectedDuration;
 
+          // 🌟 THE STOREFRONT LOCK LOGIC: Does the user already own this tier?
+          // (Requires ownedCoils to be passed from App.jsx as instructed in the previous step)
+          const isOwned = ownedCoils && ownedCoils.some(coil => coil.name === rig.name);
+
           return (
             <div 
               key={rig.id}
               ref={index === 0 ? firstCardRef : null}
-              onClick={() => onSelectMachine({ ...rig, leaseDays: selectedDuration })}
-              className="bg-[#15171e] border border-gray-900 rounded-xl p-3 flex flex-col justify-between items-center relative active:scale-[0.98] transition-all hover:border-gray-800 group shadow-md cursor-pointer"
+              // 🔒 FIXED: If owned, the click action does absolutely nothing.
+              onClick={() => isOwned ? null : onSelectMachine({ ...rig, leaseDays: selectedDuration })}
+              // 🔒 FIXED: Applies grayed-out styling and disabled cursor if owned
+              className={`border rounded-xl p-3 flex flex-col justify-between items-center relative transition-all group shadow-md ${
+                isOwned 
+                  ? 'bg-[#0d0f13] border-gray-950 cursor-not-allowed opacity-80' 
+                  : 'bg-[#15171e] border-gray-900 active:scale-[0.98] hover:border-gray-800 cursor-pointer'
+              }`}
             >
               {/* Massive premium icon frame block preserved */}
-              <div className="w-full h-24 my-1.5 bg-[#1a1d26] rounded-xl flex items-center justify-center text-4xl shadow-inner border border-gray-950">
-                {rig.icon}
+              <div className={`w-full h-24 my-1.5 rounded-xl flex items-center justify-center text-4xl shadow-inner border ${
+                isOwned ? 'bg-[#12141a] border-gray-950 opacity-60' : 'bg-[#1a1d26] border-gray-950'
+              }`}>
+                <span className={isOwned ? 'grayscale' : ''}>{rig.icon}</span>
               </div>
 
               {/* Spacious spacing configuration layout */}
               <div className="text-center w-full space-y-1 mt-0.5 mb-1.5">
-                <h4 className="text-xs font-bold font-mono text-gray-200 group-hover:text-cyan-400 transition-colors">{rig.name}</h4>
+                <h4 className={`text-xs font-bold font-mono transition-colors ${
+                  isOwned ? 'text-gray-500' : 'text-gray-200 group-hover:text-cyan-400'
+                }`}>
+                  {rig.name}
+                </h4>
                 
                 <div className="bg-[#0e1014] rounded-md py-1 px-2 border border-gray-950">
                   <p className="text-[8px] text-gray-500 font-mono uppercase tracking-tight">Daily Yield</p>
-                  <p className="text-[10px] text-blue-400 font-mono font-bold tracking-tight">${dailyYieldUsdc.toFixed(2)} USDC</p>
+                  <p className={`text-[10px] font-mono font-bold tracking-tight ${
+                    isOwned ? 'text-gray-600' : 'text-blue-400'
+                  }`}>
+                    ${dailyYieldUsdc.toFixed(2)} USDC
+                  </p>
                 </div>
                 
-                <div className="w-full bg-[#1e2330] border border-gray-800 text-gray-200 text-[11px] font-mono font-bold py-1.5 rounded-lg mt-1">
-                  ${rig.priceUsdc.toFixed(2)} USDC
-                </div>
+                {/* 🔒 THE OWNED BADGE VS THE PRICE BUTTON */}
+                {isOwned ? (
+                  <div className="w-full bg-[#0a0b0d] border border-gray-900 text-gray-600 text-[9px] font-mono font-bold py-1.5 rounded-lg mt-1 flex items-center justify-center tracking-widest uppercase">
+                    🔒 Owned
+                  </div>
+                ) : (
+                  <div className="w-full bg-[#1e2330] border border-gray-800 text-gray-200 text-[11px] font-mono font-bold py-1.5 rounded-lg mt-1">
+                    ${rig.priceUsdc.toFixed(2)} USDC
+                  </div>
+                )}
               </div>
             </div>
           );

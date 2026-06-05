@@ -54,6 +54,10 @@ export default function App() {
   const currentPerSecondRate = activeCoil ? (parseFloat(activeCoil.ucredits_per_sec || 0)) : 0.0000;
   const displayUsdcBalance = (uCredits / 1000000).toFixed(6);
 
+  // 🌟 NEW LEAKAGE STATE TRACKERS
+  const [overtimeSeconds, setOvertimeSeconds] = useState(0); 
+  const [totalFleetLeakage, setTotalFleetLeakage] = useState(0); 
+
   /**
    * 🎰 RANDOMIZED LIVE STREAM ENGINE: Shuffles single terminal rows at random 5-15s windows
    */
@@ -114,18 +118,6 @@ export default function App() {
         const activeFleets = fleetResponse.data.fleet || [];
         setOwnedCoils(activeFleets);
 
-        // 🌟 FIXED: Keeping the accurate ignition time, but returning to the correct speed variable!
-        if (activeFleets.length > 0 && activeFleets[0].last_ignition_time) {
-          const lastIgnitionTime = new Date(activeFleets[0].last_ignition_time);
-          const serverNow = new Date();
-          const elapsedSeconds = Math.max(0, Math.floor((serverNow - lastIgnitionTime) / 1000));
-          
-          const initialRatePerSec = parseFloat(activeFleets[0].ucredits_per_sec) || 0;
-          
-          setUCredits(elapsedSeconds * initialRatePerSec);
-          setMiningState(elapsedSeconds > 0 ? 'ACTIVE' : 'IDLE');
-        }
-
         setIsLoading(false);
       } catch (err) {
         console.error('🔻 [Initializer Error]:', err.message);
@@ -142,7 +134,7 @@ export default function App() {
   }, []);
 
   /**
-   * 📬 GLOBAL BROADCAST LISTENER: Catches any triggerAppError event sent from child tabs
+   * 📬 GLOBAL BROADCAST LISTENER
    */
   useEffect(() => {
     const handleErrorHook = (e) => {
@@ -153,34 +145,76 @@ export default function App() {
   }, []);  
 
   /**
-   * ⚡ REAL-TIME SYSTEM ENGINE TICKER (🌟 FIXED: Amnesia-Proof)
+   * ⚡ REAL-TIME DETERMINISTIC ENGINE TICKER (STATE-AWARE + FLEET LEAKAGE)
    */
   useEffect(() => {
-    if (isLoading || miningState !== 'ACTIVE' || !activeCoil) return;
+    if (isLoading || !activeCoil) return;
+
+    const initialRatePerSec = parseFloat(activeCoil.ucredits_per_sec) || 0;
+    
+    const calculateCoreMath = () => {
+      const now = new Date().getTime();
+
+      // --- 1. CALCULATE TOTAL FLEET LEAKAGE FOR THE MASTER VAULT ---
+      let currentFleetLeakage = 0;
+      ownedCoils.forEach(coil => {
+        if (coil.last_ignition_time) {
+          const coilElapsed = Math.max(0, Math.floor((now - new Date(coil.last_ignition_time).getTime()) / 1000));
+          if (coilElapsed > 90000) { 
+            const leakSecs = coilElapsed - 90000;
+            const rate = parseFloat(coil.ucredits_per_sec) || 0;
+            currentFleetLeakage += leakSecs * (rate * 0.5);
+          }
+        }
+      });
+      setTotalFleetLeakage(currentFleetLeakage);
+
+      // --- 2. CALCULATE SPECIFIC ACTIVE COIL MATH ---
+      if (!activeCoil.last_ignition_time) {
+        setUCredits(0);
+        setUnminedLoss(0);
+        setSecondsRemaining(86400);
+        setOvertimeSeconds(0);
+        setMiningState('IDLE');
+        return;
+      }
+
+      const ignitionTime = new Date(activeCoil.last_ignition_time).getTime();
+      const elapsedTotalSeconds = Math.max(0, Math.floor((now - ignitionTime) / 1000));
+
+      const activeMiningSeconds = Math.min(elapsedTotalSeconds, 90000);
+      const leakageSeconds = Math.max(0, elapsedTotalSeconds - 90000);
+
+      setUCredits(activeMiningSeconds * initialRatePerSec);
+      setUnminedLoss(leakageSeconds * (initialRatePerSec * 0.5));
+
+      // --- 3. DYNAMIC STATE ROUTER ---
+      if (elapsedTotalSeconds <= 86400) {
+        // PROCESSING (0 - 24 hours)
+        setSecondsRemaining(86400 - elapsedTotalSeconds); 
+        setOvertimeSeconds(0);
+        setMiningState('ACTIVE');
+      } else if (elapsedTotalSeconds > 86400 && elapsedTotalSeconds <= 90000) {
+        // GRACE PERIOD (24 - 25 hours)
+        setSecondsRemaining(90000 - elapsedTotalSeconds); 
+        setOvertimeSeconds(0);
+        setMiningState('GRACE');
+      } else {
+        // THERMAL LEAKAGE (25+ hours)
+        setSecondsRemaining(0);
+        setOvertimeSeconds(elapsedTotalSeconds - 90000); 
+        setMiningState('LEAKING');
+      }
+    };
+
+    calculateCoreMath(); 
 
     const tickInterval = setInterval(() => {
-      // 1. Keep adding to the uCredits dial smoothly every second
-      setUCredits((prev) => prev + currentPerSecondRate);
-
-      // 2. Smart Timer Math: Calculate exact time remaining securely from the database stamp
-      if (activeCoil.last_ignition_time) {
-        const ignitionTime = new Date(activeCoil.last_ignition_time).getTime();
-        const now = new Date().getTime();
-        const elapsedTotalSeconds = Math.max(0, Math.floor((now - ignitionTime) / 1000));
-        
-        // 86400 seconds = 24 hours. Modulo gives us seconds into the current day.
-        const secondsIntoCurrentCycle = elapsedTotalSeconds % 86400;
-        const secondsRemaining = 86400 - secondsIntoCurrentCycle;
-        
-        setSecondsRemaining(secondsRemaining);
-      } else {
-        // Fallback for brand new machines before refresh
-        setSecondsRemaining((prev) => (prev <= 1 ? 86400 : prev - 1));
-      }
+      calculateCoreMath();
     }, 1000);
 
     return () => clearInterval(tickInterval);
-  }, [isLoading, miningState, currentPerSecondRate, activeCoil]);
+  }, [isLoading, activeCoil, ownedCoils]);
 
   const handleClaimRevenue = async () => {
     if (uCredits <= 0) return;
@@ -214,7 +248,14 @@ export default function App() {
       const fleetResponse = await axios.get('http://localhost:5000/api/hardware/fleet', {
         headers: { Authorization: mockAuthHeader }
       });
-      setOwnedCoils(fleetResponse.data.fleet || []);
+      
+      // 🌟 FIXED: Properly defining the array so it doesn't crash when calculating length
+      const freshFleet = fleetResponse.data.fleet || [];
+      setOwnedCoils(freshFleet);
+
+      if (freshFleet.length > 0) {
+        setSelectedCoilIndex(freshFleet.length - 1);
+      }
       
       setMiningState('ACTIVE'); 
       setSelectedMachine(null); 
@@ -223,10 +264,38 @@ export default function App() {
     }
   };
 
-  const handleCoreIgnition = () => {
-    if ((miningState === 'IDLE' || miningState === 'GRACE') && activeCoil) {
+  const handleCoreIgnition = async () => {
+    if ((miningState === 'IDLE' || miningState === 'GRACE' || miningState === 'LEAKING') && activeCoil) {
+      // 1. Optimistic UI Update (Instant Blue)
       setMiningState('ACTIVE');
       setSecondsRemaining(86400); 
+      setOvertimeSeconds(0);
+
+      try {
+        const mockAuthHeader = "Bearer 999999999";
+        
+        // 2. TELL THE DATABASE TO RESTART THE CLOCK
+        // ⚠️ Make sure this URL matches your actual backend ignition route!
+        await axios.post(`http://localhost:5000/api/hardware/ignite`, {
+          machine_id: activeCoil.id 
+        }, {
+          headers: { Authorization: mockAuthHeader }
+        });
+
+        // 3. PULL THE FRESH TIMESTAMPS FROM THE DATABASE
+        // This ensures the 1-second ticker gets the new last_ignition_time and stays blue.
+        const fleetResponse = await axios.get('http://localhost:5000/api/hardware/fleet', {
+          headers: { Authorization: mockAuthHeader }
+        });
+        
+        const freshFleet = fleetResponse.data.fleet || [];
+        setOwnedCoils(freshFleet);
+
+      } catch (err) {
+        console.error("Ignition failed:", err);
+        setActiveError(err.response?.data?.error || "Ignition sequence failed to sync with server.");
+        
+      }
     }
   };
 
@@ -282,7 +351,7 @@ export default function App() {
               {ownedCoils.length > 0 ? (
                 <select
                   value={selectedCoilIndex}
-                  onChange={(e) => { setSelectedCoilIndex(parseInt(e.target.value)); setUCredits(0); }}
+                  onChange={(e) => setSelectedCoilIndex(parseInt(e.target.value))}
                   className="bg-[#14171d] border border-gray-800/80 rounded-lg px-2 py-1 text-[11px] font-mono font-bold text-cyan-400 outline-none cursor-pointer appearance-none w-full"
                   style={{ backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2322d3ee' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'></polyline></svg>")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center', backgroundSize: '12px', paddingRight: '24px' }}
                 >
@@ -324,47 +393,103 @@ export default function App() {
               <div className="text-center space-y-0.5 mb-5 z-10">
                 <p className="text-[9px] font-bold tracking-[0.15em] text-gray-500 uppercase">Mined Assets Accumulator</p>
                 
-                {/* 🌟 FIXED: Swapped raw text for the formatting engine to force leading zeros */}
                 <div className="flex justify-center items-baseline space-x-2">
                   <UCreditDisplay amount={uCredits} className="text-4xl text-white font-bold" />
                   <span className="text-xs text-cyan-500 font-sans font-normal">uCredits</span>
                 </div>
                 
-                {/* 🌟 FIXED: The strict 2 uC = $1 USDC economy rule */}
                 <p className="text-xs text-gray-400 font-medium font-mono">≈ ${(parseFloat(uCredits) / 2000).toFixed(2)} USDC</p>
               </div>
-              {/* INTERACTIVE GLOW RING */}
+              
+              {/* 🌟 FIXED DYNAMIC INTERACTIVE GLOW RING */}
               <div 
                 onClick={handleCoreIgnition}
-                className="relative w-36 h-36 flex items-center justify-center z-10 cursor-pointer active:scale-95 transition-transform group"
+                className="relative w-36 h-36 flex items-center justify-center z-10 cursor-pointer active:scale-95 transition-transform group mt-2"
               >
+                {/* Outer Dashed Orbit */}
                 <div className={`absolute inset-0 rounded-full border border-dashed transition-all duration-700 ${
-                  miningState === 'ACTIVE' ? 'border-cyan-500/30 animate-[spin_30s_linear_infinite]' : 'border-red-500/20'
+                  miningState === 'ACTIVE' ? 'border-cyan-500/30 animate-[spin_30s_linear_infinite]' : 
+                  miningState === 'GRACE' ? 'border-amber-500/50 animate-[spin_15s_linear_infinite]' :
+                  miningState === 'LEAKING' ? 'border-red-500/50 animate-[spin_5s_linear_infinite]' :
+                  'border-gray-700/30'
                 }`}></div>
+                
+                {/* Inner Solid Core */}
                 <div className={`absolute inset-2 rounded-full border transition-all duration-700 ${
-                  miningState === 'ACTIVE' ? 'border-cyan-500/50 shadow-[0_0_25px_rgba(34,211,238,0.2)] bg-[#0e1118]' : 'border-red-500/40 shadow-[0_0_25px_rgba(239,68,68,0.1)] bg-[#160d0e]'
+                  miningState === 'ACTIVE' ? 'border-cyan-500/50 shadow-[0_0_25px_rgba(34,211,238,0.2)] bg-[#0e1118]' : 
+                  miningState === 'GRACE' ? 'border-amber-500/50 shadow-[0_0_35px_rgba(245,158,11,0.25)] bg-[#1a140c]' :
+                  miningState === 'LEAKING' ? 'border-red-500/60 shadow-[0_0_40px_rgba(239,68,68,0.3)] bg-[#1a0c0c]' :
+                  'border-gray-700/40 bg-[#0e1014]'
                 }`}></div>
-                <div className="z-10 text-center">
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center shadow-md mx-auto rotate-45 transform transition-colors duration-500 ${
-                    miningState === 'ACTIVE' ? 'from-cyan-400 to-blue-500 bg-gradient-to-br animate-pulse' : 'from-red-500 to-rose-700 bg-gradient-to-br'
+                
+                {/* Center Icon Block - DYNAMIC SHAPE AND TEXT */}
+                <div className="z-10 text-center w-full px-2">
+                  <div className={`rounded-xl flex items-center justify-center shadow-md mx-auto transform transition-all duration-500 ${
+                    miningState === 'ACTIVE' 
+                      ? 'w-10 h-10 rotate-45 from-cyan-400 to-blue-500 bg-gradient-to-br animate-pulse' 
+                      : miningState === 'GRACE'
+                      ? 'w-[72px] h-[72px] rounded-2xl from-amber-400 to-orange-500 bg-gradient-to-br animate-pulse'
+                      : miningState === 'LEAKING'
+                      ? 'w-[72px] h-[72px] rounded-2xl from-red-500 to-rose-700 bg-gradient-to-br'
+                      : 'w-10 h-10 rotate-45 from-gray-700 to-gray-900 bg-gradient-to-br'
                   }`}>
-                    <span className="text-base -rotate-45">{miningState === 'ACTIVE' ? '⚡' : '💤'}</span>
+                    <span className={`font-mono font-black text-center uppercase tracking-tighter leading-none ${
+                      miningState === 'ACTIVE' || miningState === 'IDLE' ? '-rotate-45 text-base' : 'text-[9px] text-black tracking-tight'
+                    }`}>
+                      {miningState === 'ACTIVE' && '⚡'}
+                      {miningState === 'GRACE' && (
+                        <div className="flex flex-col items-center justify-center space-y-0.5">
+                          <span className="text-xs">⚡</span>
+                          <span>TAP TO</span>
+                          <span>CONTINUE</span>
+                        </div>
+                      )}
+                      {miningState === 'LEAKING' && (
+                        <div className="flex flex-col items-center justify-center space-y-0.5">
+                          <span className="text-xs">⚠️</span>
+                          <span>TAP TO</span>
+                          <span>RESTART</span>
+                        </div>
+                      )}
+                      {(miningState === 'IDLE' || !activeCoil) && '💤'}
+                    </span>
                   </div>
                 </div>
               </div>
 
-              {/* CONTEXTUAL STATUS TAB DOCK */}
-              <div className="mt-5 z-10">
-                <span className={`px-4 py-1.5 rounded-full text-[9px] font-mono tracking-wider font-bold border transition-all duration-500 ${
-                  miningState === 'ACTIVE' ? 'bg-cyan-950/30 border-cyan-800/40 text-cyan-400' : 'bg-red-950/40 border-red-900/40 text-red-400'
-                }`}>
+              {/* 🌟 FIXED CONTEXTUAL STATUS TAB DOCK */}
+              <div className="mt-6 z-10 flex flex-col items-center justify-center min-h-[60px]">
+                {miningState === 'ACTIVE' && (
+                  <span className="px-4 py-1.5 rounded-full text-[9px] font-mono tracking-wider font-bold border bg-cyan-950/30 border-cyan-800/40 text-cyan-400">
+                    PROCESSING • {secondsRemaining !== null ? formatTime(secondsRemaining) : 'LOADING..'}
+                  </span>
+                )}
 
-                  {miningState === 'ACTIVE' 
-                    ? `PROCESSING • ${secondsRemaining !== null ? formatTime(secondsRemaining) : 'LOADING..'}` 
-                    : 'CRITICAL TERMINAL SHUTDOWN • COILS IDLE'
-                  }
+                {miningState === 'GRACE' && (
+                  <span className="px-4 py-1.5 rounded-full text-[9px] font-mono tracking-wider font-bold border bg-amber-950/40 border-amber-900/50 text-amber-500 animate-pulse">
+                    🛑 COIL HALTING IN {formatTime(secondsRemaining)} • TAP TO CONTINUE
+                  </span>
+                )}
 
-                </span>
+                {miningState === 'LEAKING' && (
+                  <div className="flex flex-col items-center space-y-3 animate-[slideUpFade_0.3s_ease-out_forwards]">
+                    <span className="px-4 py-1.5 rounded-full text-[9px] font-mono tracking-wider font-bold border bg-red-950/40 border-red-900 text-red-400">
+                      ⚠️ MINING EXPIRED • OVERTIME LOSS TICKING: +{formatTime(overtimeSeconds)}
+                    </span>
+                    
+                    <div className="bg-[#160d0e] border border-red-900/40 rounded-lg px-4 py-2 flex flex-col items-center shadow-inner">
+                      <span className="text-[8px] text-red-500/60 uppercase tracking-widest font-bold mb-0.5">Active Incident Leakage</span>
+                      <span className="text-red-400 font-mono font-bold text-xs">-{unminedLoss.toFixed(5)} uC</span>
+                      <span className="text-red-500/70 font-mono text-[9px]">≈ -${(unminedLoss / 2000).toFixed(4)} USDC</span>
+                    </div>
+                  </div>
+                )}
+
+                {(miningState === 'IDLE' || !activeCoil) && (
+                  <span className="px-4 py-1.5 rounded-full text-[9px] font-mono tracking-wider font-bold border bg-gray-900/50 border-gray-800 text-gray-500">
+                    {ownedCoils.length > 0 ? 'SYSTEM IDLE • AWAITING IGNITION' : 'SYSTEM IDLE • NO ACTIVE COILS'}
+                  </span>
+                )}
               </div>
             </div>
 
@@ -385,7 +510,7 @@ export default function App() {
                     <div><span className="text-gray-500">Purchase Cost:</span></div>
                     <div className="text-right text-gray-300">${parseFloat(activeCoil.price_usdc).toFixed(2)} USDC</div>
                     <div><span className="text-gray-500">Expected Yield:</span></div>
-                    <div className="text-right text-blue-400 font-bold">${parseFloat(activeCoil.daily_yield_usdc).toFixed(4)} / Day</div>
+                    <div className="text-right text-blue-400 font-bold">${((parseFloat(activeCoil.hourly_yield_rate) || 0) * 24).toFixed(2)} / Day</div>
                     <div><span className="text-gray-500">Lease Horizon:</span></div>
                     <div className="text-right text-gray-400">{activeCoil.lease_days} Days Plan</div>
                     <div className="col-span-2 border-t border-gray-950 my-1"></div>
@@ -430,16 +555,14 @@ export default function App() {
                   <div className="text-right">
                     <p className="text-[9px] font-mono text-red-500 uppercase tracking-wider">Unmined Leakage</p>
                     
-                    {/* 🌟 FIXED: Applied the formatting engine to the red leakage text */}
+                    {/* 🌟 FIXED: Tracking totalFleetLeakage instead of single incident loss */}
                     <div className="flex justify-end items-baseline space-x-1">
-                       <UCreditDisplay amount={unminedLoss > 0 ? unminedLoss : 0} className="text-xs font-bold text-red-400" />
+                       <UCreditDisplay amount={totalFleetLeakage > 0 ? totalFleetLeakage : 0} className="text-xs font-bold text-red-400" />
                        <span className="text-[10px] text-red-400">uC</span>
                     </div>
                     
-                    {/* 🌟 FIXED: The strict 2 uC = $1 USDC economy rule */}
-                    <p className="text-[9px] font-mono text-red-500/70">≈ ${unminedLoss > 0 ? (parseFloat(unminedLoss) / 2000).toFixed(2) : '0.00'} USDC</p>
+                    <p className="text-[9px] font-mono text-red-500/70">≈ ${totalFleetLeakage > 0 ? (totalFleetLeakage / 2000).toFixed(2) : '0.00'} USDC</p>
                   </div>
-
                 </div>
 
                 <div className="grid grid-cols-2 gap-2 pt-0.5">
@@ -470,7 +593,7 @@ export default function App() {
           </div>
         )}
 
-        {activeTab === 'hardware' && <HardwareTab onSelectMachine={(machine) => setSelectedMachine(machine)} />}
+        {activeTab === 'hardware' && <HardwareTab ownedCoils={ownedCoils} onSelectMachine={(machine) => setSelectedMachine(machine)} />}  
         {activeTab === 'friends' && <FriendsTab userBalance={vaultUSDC} onPurchaseSuccess={(cost) => setVaultUSDC(prev => prev - cost)} />}
         {activeTab === 'history' && <HistoryTab />}
       </main>
