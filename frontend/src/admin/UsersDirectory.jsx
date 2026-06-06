@@ -73,8 +73,8 @@ export default function UsersDirectory() {
                       let isLeaking = false;
                       let overtimeSeconds = 0;
                       
-                      let totalDisplayedLeakage = parseFloat(m.leakage_ucredits) || 0; 
-                      let totalDisplayedLeakageUSDC = parseFloat(m.leakage_usdc) || 0;
+                      let totalDisplayedLeakage = parseFloat(m.leakage_ucredits); 
+                      let totalDisplayedLeakageUSDC = parseFloat(m.leakage_usdc);
 
                       // Run deterministic engine check if backend timestamp is available
                       if (m.last_ignition_time) {
@@ -85,18 +85,17 @@ export default function UsersDirectory() {
                         isLeaking = elapsedSeconds > 90000;
                         overtimeSeconds = isLeaking ? elapsedSeconds - 90000 : 0;
 
-                        if (m.hourly_yield_rate) {
-                          const ratePerSec = parseFloat(m.hourly_yield_rate) / 3600;
-                          const liveLeakageUCredits = overtimeSeconds * (ratePerSec * 0.5);
-                          
-                          // Prioritize unmined_loss_pool baseline data if returned by the backend query
-                          const savedLeakageUCredits = parseFloat(m.unmined_loss_pool) !== undefined 
-                            ? parseFloat(m.unmined_loss_pool) 
-                            : (parseFloat(m.leakage_ucredits) || 0);
+                        // Calculate raw live session uCredits directly
+                        const hourlyYield = parseFloat(m.hourly_yield_rate);
+                        const uCreditsPerSec = (hourlyYield * 2000) / 3600;
+                        const liveLeakageUCredits = overtimeSeconds * (uCreditsPerSec * 0.5);
 
-                          totalDisplayedLeakage = savedLeakageUCredits + liveLeakageUCredits;
-                          totalDisplayedLeakageUSDC = totalDisplayedLeakage / 2000;
-                        }
+                        // Pull historical pool and explicitly parse it to uCredits (Stored as uCredits in DB)
+                        const historicalLeakageUCredits = parseFloat(m.unmined_loss_pool);
+
+                        // 💰 THE TRUE BALANCED SUM
+                        totalDisplayedLeakage = historicalLeakageUCredits + liveLeakageUCredits;
+                        totalDisplayedLeakageUSDC = totalDisplayedLeakage / 2000;
                       }
 
                       return (
@@ -145,7 +144,7 @@ export default function UsersDirectory() {
                               -{totalDisplayedLeakage.toFixed(5)} uC
                             </div>
                             <div className={`text-[10px] mt-0.5 ${totalDisplayedLeakage > 0 ? "text-red-500/80" : "text-red-900/30"}`}>
-                              ≈ -${totalDisplayedLeakageUSDC.toFixed(4)} USDC
+                              ≈ -${totalDisplayedLeakageUSDC.toFixed(2)} USDC
                             </div>
                           </div>
                         </div>

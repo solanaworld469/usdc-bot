@@ -116,7 +116,7 @@ export default function App() {
           headers: { Authorization: mockAuthHeader }
         });
         const activeFleets = fleetResponse.data.fleet || [];
-        setOwnedCoils(activeFleets);
+        setOwnedCoils([...activeFleets].sort((a, b) => new Date(a.purchased_at) - new Date(b.purchased_at)));
 
         setIsLoading(false);
       } catch (err) {
@@ -155,38 +155,45 @@ export default function App() {
     const calculateCoreMath = () => {
       const now = new Date().getTime();
 
-      // --- 1. CALCULATE TOTAL FLEET LEAKAGE FOR THE MASTER VAULT ---
-      let currentFleetLeakage = 0;
-      ownedCoils.forEach(coil => {
-        if (coil.last_ignition_time) {
-          const coilElapsed = Math.max(0, Math.floor((now - new Date(coil.last_ignition_time).getTime()) / 1000));
-          if (coilElapsed > 90000) { 
-            const leakSecs = coilElapsed - 90000;
-            const rate = parseFloat(coil.ucredits_per_sec) || 0;
-            currentFleetLeakage += leakSecs * (rate * 0.5);
-          }
-        }
-      });
-      setTotalFleetLeakage(currentFleetLeakage);
-
-      // --- 2. CALCULATE SPECIFIC ACTIVE COIL MATH ---
-      if (!activeCoil.last_ignition_time) {
+      // --- 1. HANDLE IDLE / NO MACHINE SELECTED ---
+      // 🌟 Notice: The forEach loop is completely gone!
+      if (!activeCoil || !activeCoil.last_ignition_time) {
         setUCredits(0);
         setUnminedLoss(0);
+        setTotalFleetLeakage(0); // Safely zeros out the bottom right box
         setSecondsRemaining(86400);
         setOvertimeSeconds(0);
         setMiningState('IDLE');
         return;
       }
 
+      // --- 2. ACTIVE TIMING MATH ---
       const ignitionTime = new Date(activeCoil.last_ignition_time).getTime();
       const elapsedTotalSeconds = Math.max(0, Math.floor((now - ignitionTime) / 1000));
 
       const activeMiningSeconds = Math.min(elapsedTotalSeconds, 90000);
       const leakageSeconds = Math.max(0, elapsedTotalSeconds - 90000);
 
-      setUCredits(activeMiningSeconds * initialRatePerSec);
-      setUnminedLoss(leakageSeconds * (initialRatePerSec * 0.5));
+      // 🛡️ STRICT FETCH: Get database history for THIS SPECIFIC machine only
+      const rawSavedProfit = parseFloat(activeCoil.saved_profit);
+      const rawSavedLeakage = parseFloat(activeCoil.saved_leakage);
+
+      if (isNaN(rawSavedProfit) || isNaN(rawSavedLeakage)) {
+         setActiveError("CRITICAL ERROR: Financial Sync Fault. Contact Support.");
+         setMiningState('IDLE');
+         return; 
+      }
+
+      // Calculate live session values
+      const liveSessionMoney = activeMiningSeconds * initialRatePerSec;
+      const liveLeakageUCredits = leakageSeconds * (initialRatePerSec * 0.5);
+
+      // Set the Center Dials
+      setUCredits(rawSavedProfit + liveSessionMoney); 
+      setUnminedLoss(liveLeakageUCredits);
+
+      // 🌟 THE FIX: The bottom right box now ONLY tracks the Currently Selected Machine!
+      setTotalFleetLeakage(rawSavedLeakage + liveLeakageUCredits);
 
       // --- 3. DYNAMIC STATE ROUTER ---
       if (elapsedTotalSeconds <= 86400) {
@@ -251,10 +258,11 @@ export default function App() {
       
       // 🌟 FIXED: Properly defining the array so it doesn't crash when calculating length
       const freshFleet = fleetResponse.data.fleet || [];
-      setOwnedCoils(freshFleet);
+      const sortedFleet = [...freshFleet].sort((a, b) => new Date(a.purchased_at) - new Date(b.purchased_at));
+      setOwnedCoils(sortedFleet);
 
       if (freshFleet.length > 0) {
-        setSelectedCoilIndex(freshFleet.length - 1);
+        setSelectedCoilIndex(sortedFleet.length - 1);
       }
       
       setMiningState('ACTIVE'); 
@@ -270,6 +278,7 @@ export default function App() {
       setMiningState('ACTIVE');
       setSecondsRemaining(86400); 
       setOvertimeSeconds(0);
+      setUnminedLoss(0);
 
       try {
         const mockAuthHeader = "Bearer 999999999";
@@ -289,7 +298,8 @@ export default function App() {
         });
         
         const freshFleet = fleetResponse.data.fleet || [];
-        setOwnedCoils(freshFleet);
+        const sortedFleet = [...freshFleet].sort((a, b) => new Date(a.purchased_at) - new Date(b.purchased_at));
+        setOwnedCoils(sortedFleet);
 
       } catch (err) {
         console.error("Ignition failed:", err);
@@ -355,6 +365,7 @@ export default function App() {
                   className="bg-[#14171d] border border-gray-800/80 rounded-lg px-2 py-1 text-[11px] font-mono font-bold text-cyan-400 outline-none cursor-pointer appearance-none w-full"
                   style={{ backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2322d3ee' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'></polyline></svg>")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center', backgroundSize: '12px', paddingRight: '24px' }}
                 >
+                  {/* 🌟 Ensure it renders natively in order: Coil 1, then Coil 2, then Coil 3 downwards */}
                   {ownedCoils.map((coil, index) => (
                     <option key={coil.id} value={index} className="bg-[#0e1014] text-white">Coil #{index + 1}: {coil.name}</option>
                   ))}
@@ -480,7 +491,7 @@ export default function App() {
                     <div className="bg-[#160d0e] border border-red-900/40 rounded-lg px-4 py-2 flex flex-col items-center shadow-inner">
                       <span className="text-[8px] text-red-500/60 uppercase tracking-widest font-bold mb-0.5">Active Incident Leakage</span>
                       <span className="text-red-400 font-mono font-bold text-xs">-{unminedLoss.toFixed(5)} uC</span>
-                      <span className="text-red-500/70 font-mono text-[9px]">≈ -${(unminedLoss / 2000).toFixed(4)} USDC</span>
+                      <span className="text-red-500/70 font-mono text-[9px]">≈ -${(unminedLoss / 2000).toFixed(2)} USDC</span>
                     </div>
                   </div>
                 )}
@@ -510,7 +521,9 @@ export default function App() {
                     <div><span className="text-gray-500">Purchase Cost:</span></div>
                     <div className="text-right text-gray-300">${parseFloat(activeCoil.price_usdc).toFixed(2)} USDC</div>
                     <div><span className="text-gray-500">Expected Yield:</span></div>
-                    <div className="text-right text-blue-400 font-bold">${((parseFloat(activeCoil.hourly_yield_rate) || 0) * 24).toFixed(2)} / Day</div>
+                    <div className="text-right text-blue-400 font-bold">
+                      ${((parseFloat(activeCoil.ucredits_per_sec || 0) * 86400) / 2000).toFixed(2)} / Day
+                    </div>
                     <div><span className="text-gray-500">Lease Horizon:</span></div>
                     <div className="text-right text-gray-400">{activeCoil.lease_days} Days Plan</div>
                     <div className="col-span-2 border-t border-gray-950 my-1"></div>

@@ -169,7 +169,7 @@ router.post('/rent', authMiddleware, async (req, res) => {
   }
 });
 
-// 🔌 SYSTEM RESET CORE IGNITION ENGINE (WITH LEAKAGE TRAP)
+// 🔌 SYSTEM RESET CORE IGNITION ENGINE (WITH PROFIT & LEAKAGE TRAP)
 router.post('/ignite', authMiddleware, async (req, res) => {
   const { machine_id } = req.body;
   const telegramId = req.user.telegram_id;
@@ -198,37 +198,49 @@ router.post('/ignite', authMiddleware, async (req, res) => {
     const machine = machineCheck.rows[0];
     const serverNow = new Date();
     
-    // 🛑 2. THE LEAKAGE TRAP (Calculate the penalty)
+    // 🛑 2. THE DUAL TRAP (Calculate the accrued profit AND the penalty)
     if (machine.last_ignition_time) {
       const ignitionTime = new Date(machine.last_ignition_time).getTime();
       const nowMs = serverNow.getTime();
       const elapsedSeconds = Math.max(0, Math.floor((nowMs - ignitionTime) / 1000));
 
-      // If they were dead for more than 25 hours (90,000 seconds)
-      if (elapsedSeconds > 90000) {
-        const leakageSeconds = elapsedSeconds - 90000;
-        
-        // Convert hourly rate to per-second rate, apply 50% penalty
-        const ratePerSec = parseFloat(machine.hourly_yield_rate) / 3600;
-        const penaltyUCredits = leakageSeconds * (ratePerSec * 0.5);
-        const penaltyUSDC = penaltyUCredits / 2000; // 2000 uC = $1 USDC
+      // Calculate base rate logic
+      const ratePerSecUsdc = parseFloat(machine.hourly_yield_rate) / 3600;
+      const ratePerSecUCredits = ratePerSecUsdc * 2000; // Convert to uCredits
 
-        // 📝 3. PERMANENTLY LOG THE PENALTY ACROSS ALL 3 LEDGERS
-        
-        // Update Machine total
-        await client.query(
-          `UPDATE user_machines SET unmined_loss_pool = unmined_loss_pool + $1 WHERE id = $2`,
-          [penaltyUCredits, machine_id]
-        );
+      // Splitting time into Good (Mining) and Bad (Leakage)
+      const activeMiningSeconds = Math.min(elapsedSeconds, 90000); // Caps at 25 hours
+      const leakageSeconds = Math.max(0, elapsedSeconds - 90000);       // Anything past 25 hours
 
-        // Update the specifically active 30-day epoch
-        await client.query(
-          `UPDATE machine_monthly_epochs SET ucredits_leaked = ucredits_leaked + $1 
-           WHERE machine_id = $2 AND claim_status = 'ACCRUING'`,
-          [penaltyUCredits, machine_id]
-        );
+      // 💰 TRAP 1: THE PROFIT
+      const earnedUCredits = activeMiningSeconds * ratePerSecUCredits;
+      
+      // ⚠️ TRAP 2: THE PENALTY
+      const penaltyUCredits = leakageSeconds * (ratePerSecUCredits * 0.5);
+      const penaltyUSDC = penaltyUCredits / 2000; 
 
-        // Update User's lifetime master ledger
+      // 📝 3. PERMANENTLY LOG THE FINANCIALS ACROSS ALL LEDGERS
+
+      // A) Update the Machine Master Totals (Both Profit and Loss)
+      await client.query(
+        `UPDATE user_machines 
+         SET unmined_loss_pool = unmined_loss_pool + $1,
+             unmined_profit_pool = unmined_profit_pool + $2
+         WHERE id = $3`,
+        [penaltyUCredits, earnedUCredits, machine_id]
+      );
+
+      // B) Update the currently active 30-day epoch
+      await client.query(
+        `UPDATE machine_monthly_epochs 
+         SET ucredits_leaked = ucredits_leaked + $1,
+             ucredits_mined = ucredits_mined + $2
+         WHERE machine_id = $3 AND claim_status = 'ACCRUING'`,
+        [penaltyUCredits, earnedUCredits, machine_id]
+      );
+
+      // C) Update User's lifetime master ledger (Only tracking leakage here per original logic)
+      if (penaltyUSDC > 0) {
         await client.query(
           `UPDATE users SET total_usdc_leaked = total_usdc_leaked + $1 WHERE telegram_id = $2`,
           [penaltyUSDC, telegramId]
@@ -236,7 +248,7 @@ router.post('/ignite', authMiddleware, async (req, res) => {
       }
     }
 
-    // 🔄 4. RESET THE CLOCK (Only AFTER the penalty is safely saved)
+    // 🔄 4. RESET THE CLOCK (Only AFTER the money is safely saved)
     await client.query(
       `UPDATE user_machines 
        SET last_ignition_time = $1, status = 'ACTIVE' 
@@ -248,7 +260,7 @@ router.post('/ignite', authMiddleware, async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: 'Coil operational velocity re-established. Thermal penalty securely logged.',
+      message: 'Coil operational velocity re-established. Temporal ledgers safely synchronized.',
       ignited_machine: machine_id,
       last_ignition_time: serverNow
     });

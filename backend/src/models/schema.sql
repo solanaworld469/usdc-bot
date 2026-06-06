@@ -39,10 +39,12 @@ CREATE TABLE IF NOT EXISTS user_machines (
     last_ignition_time TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     last_claim_at TIMESTAMP WITHOUT TIME ZONE,
     expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
-    unmined_loss_pool NUMERIC(16, 6) DEFAULT 0.000000
+    unmined_loss_pool NUMERIC(16, 6) DEFAULT 0.000000,
+    unmined_profit_pool NUMERIC(16, 6) DEFAULT 0.000000
 );
 CREATE INDEX IF NOT EXISTS idx_user_machines_user_id ON user_machines(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_machines_last_ignition ON user_machines(last_ignition_time);
+ALTER TABLE user_machines ADD COLUMN unmined_profit_pool NUMERIC(16, 6) DEFAULT 0.000000;
 
 -- ====================================================================
 -- TABLE 3: activation_keys (The Secure Access Ledger)
@@ -124,5 +126,26 @@ CREATE INDEX IF NOT EXISTS idx_epochs_machine ON machine_monthly_epochs(machine_
 CREATE INDEX IF NOT EXISTS idx_epochs_user ON machine_monthly_epochs(telegram_id);
 
 
+-- ====================================================================
+-- TABLE 8: mining_ledger (The Permanent Auditing Vault)
+-- ====================================================================
+CREATE TABLE IF NOT EXISTS mining_ledger (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    machine_id UUID NOT NULL REFERENCES user_machines(id) ON DELETE CASCADE,
+    telegram_id BIGINT NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
+    
+    -- Financial Payload
+    mined_ucredits NUMERIC(16, 6) DEFAULT 0.000000,
+    mined_usdc NUMERIC(16, 6) DEFAULT 0.000000,
+    leaked_ucredits NUMERIC(16, 6) DEFAULT 0.000000,
+    leaked_usdc NUMERIC(16, 6) DEFAULT 0.000000,
+    
+    -- Time Boundary (Critical for the Daily Admin Filter)
+    processed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
 
-
+-- ⚡ Indexes to guarantee instant Admin Dashboard load times
+CREATE INDEX IF NOT EXISTS idx_mining_ledger_date ON mining_ledger(DATE(processed_at));
+CREATE INDEX IF NOT EXISTS idx_mining_ledger_machine ON mining_ledger(machine_id);
+CREATE INDEX IF NOT EXISTS idx_mining_ledger_user ON mining_ledger(telegram_id);
+CREATE INDEX IF NOT EXISTS idx_mining_ledger_processed_at ON mining_ledger(processed_at);

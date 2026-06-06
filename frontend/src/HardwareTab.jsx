@@ -67,35 +67,40 @@ export default function HardwareTab({ ownedCoils, onSelectMachine }) {
 
       {/* 📦 EXPANDED RUNWAY GRID SYSTEM */}
       <div className="grid grid-cols-2 gap-3 pb-4 pt-1.5 pr-0.5">
-        {hardcodedRigs.map((rig, index) => {
+        
+        {/* 🌟 FIXED: Split catalog into Available vs Owned, then stack them so Owned goes to the bottom! */}
+        {[
+          ...hardcodedRigs.filter(rig => !(ownedCoils && ownedCoils.some(coil => coil.name === rig.name))),
+          ...hardcodedRigs.filter(rig => ownedCoils && ownedCoils.some(coil => coil.name === rig.name))
+        ].map((rig, index) => {
+
+          // 🌟 RESTORED: Vital mathematical variables required to calculate yield values safely
           const totalYieldUsdc = rig.priceUsdc * (roiPercentage / 100);
           const dailyYieldUsdc = totalYieldUsdc / selectedDuration;
 
-          // 🌟 THE STOREFRONT LOCK LOGIC: Does the user already own this tier?
-          // (Requires ownedCoils to be passed from App.jsx as instructed in the previous step)
+          // 🌟 THE STOREFRONT LOCK LOGIC: Detects if the card matches an owned machine
           const isOwned = ownedCoils && ownedCoils.some(coil => coil.name === rig.name);
 
           return (
             <div 
               key={rig.id}
-              ref={index === 0 ? firstCardRef : null}
-              // 🔒 FIXED: If owned, the click action does absolutely nothing.
+              // If owned, click action does absolutely nothing
               onClick={() => isOwned ? null : onSelectMachine({ ...rig, leaseDays: selectedDuration })}
-              // 🔒 FIXED: Applies grayed-out styling and disabled cursor if owned
+              // Grayed-out styling and disabled cursor if owned
               className={`border rounded-xl p-3 flex flex-col justify-between items-center relative transition-all group shadow-md ${
                 isOwned 
                   ? 'bg-[#0d0f13] border-gray-950 cursor-not-allowed opacity-80' 
                   : 'bg-[#15171e] border-gray-900 active:scale-[0.98] hover:border-gray-800 cursor-pointer'
               }`}
             >
-              {/* Massive premium icon frame block preserved */}
+              {/* Premium icon frame block */}
               <div className={`w-full h-24 my-1.5 rounded-xl flex items-center justify-center text-4xl shadow-inner border ${
                 isOwned ? 'bg-[#12141a] border-gray-950 opacity-60' : 'bg-[#1a1d26] border-gray-950'
               }`}>
                 <span className={isOwned ? 'grayscale' : ''}>{rig.icon}</span>
               </div>
 
-              {/* Spacious spacing configuration layout */}
+              {/* Spacing layout */}
               <div className="text-center w-full space-y-1 mt-0.5 mb-1.5">
                 <h4 className={`text-xs font-bold font-mono transition-colors ${
                   isOwned ? 'text-gray-500' : 'text-gray-200 group-hover:text-cyan-400'
@@ -112,7 +117,7 @@ export default function HardwareTab({ ownedCoils, onSelectMachine }) {
                   </p>
                 </div>
                 
-                {/* 🔒 THE OWNED BADGE VS THE PRICE BUTTON */}
+                {/* THE OWNED BADGE VS THE PRICE BUTTON */}
                 {isOwned ? (
                   <div className="w-full bg-[#0a0b0d] border border-gray-900 text-gray-600 text-[9px] font-mono font-bold py-1.5 rounded-lg mt-1 flex items-center justify-center tracking-widest uppercase">
                     🔒 Owned

@@ -16,7 +16,7 @@ router.use(adminAuth);
 
 /**
  * 👤 GET /api/admin-panel/users
- * 🌟 FIXED: ADVANCED FLEET PAYLOAD WITH NESTED MACHINE DATA
+ * 🌟 FIXED: ADVANCED FLEET PAYLOAD WITH TELEMETRY INTERFACES PASSED THROUGH TO THE FRONTEND
  */
 const nameMap = {
   rig_1: 'SOL Core',
@@ -33,9 +33,12 @@ router.get('/users', async (req, res) => {
     
     const computedRows = await Promise.all(userRowsResult.rows.map(async (user) => {
       
-      // Grab every active machine this user owns
+      // 🌟 FIXED: Injected unmined_loss_pool into the query profile select parameters
       const machineCheck = await db.query(
-        "SELECT machine_tier, hourly_yield_rate, last_ignition_time FROM user_machines WHERE user_id = $1 AND status = 'ACTIVE' ORDER BY purchased_at ASC",
+        `SELECT machine_tier, hourly_yield_rate, last_ignition_time, unmined_loss_pool 
+         FROM user_machines 
+         WHERE user_id = $1 AND status = 'ACTIVE' 
+         ORDER BY purchased_at ASC`,
         [user.telegram_id]
       );
 
@@ -54,7 +57,7 @@ router.get('/users', async (req, res) => {
 
       let aggregateMinedUSDC = 0;
       let aggregateLeakageUSDC = 0;
-      const userMachines = []; // 🌟 NEW: The array that will hold individual machine data!
+      const userMachines = []; // The array holding individual machine data
 
       // Loop through every machine to calculate exact individual math
       for (let i = 0; i < machineCheck.rows.length; i++) {
@@ -68,7 +71,10 @@ router.get('/users', async (req, res) => {
                   mined_ucredits: "0000.00000",
                   mined_usdc: "0.00",
                   leakage_ucredits: "0000.00000",
-                  leakage_usdc: "0.00"
+                  leakage_usdc: "0.00",
+                  last_ignition_time: null,
+                  hourly_yield_rate: machine.hourly_yield_rate,
+                  unmined_loss_pool: "0.000000"
               });
               continue;
           }
@@ -105,7 +111,12 @@ router.get('/users', async (req, res) => {
               mined_ucredits: (machineMinedUSDC * 2000).toFixed(5).padStart(10, '0'),
               mined_usdc: machineMinedUSDC.toFixed(2),
               leakage_ucredits: (machineLeakageUSDC * 2000).toFixed(5).padStart(10, '0'),
-              leakage_usdc: machineLeakageUSDC.toFixed(2)
+              leakage_usdc: machineLeakageUSDC.toFixed(2),
+              
+              // 🌟 FIXED: Passing raw data blocks over the socket array to power up React tickers
+              last_ignition_time: machine.last_ignition_time,
+              hourly_yield_rate: machine.hourly_yield_rate,
+              unmined_loss_pool: machine.unmined_loss_pool
           });
       }
 
@@ -116,7 +127,7 @@ router.get('/users', async (req, res) => {
       return {
         ...user,
         fleet_size: userMachines.length,
-        machines: userMachines, // 🌟 Sends the nested array to the frontend
+        machines: userMachines, // Sends the nested array to the frontend
         total_mined_ucredits: totalMinedUCredits.toFixed(5).padStart(10, '0'),
         total_mined_usdc: aggregateMinedUSDC.toFixed(2),
         total_leakage_ucredits: totalLeakageUCredits.toFixed(5).padStart(10, '0'),
@@ -134,6 +145,7 @@ router.get('/users', async (req, res) => {
 
 /**
  * 🖥️ GET /api/admin-panel/machines
+ * 🔒 UNTOUCHED PRESERVATION
  */
 router.get('/machines', async (req, res) => {
   try {
@@ -147,6 +159,7 @@ router.get('/machines', async (req, res) => {
 
 /**
  * 🔑 GET /api/admin-panel/keys
+ * 🔒 UNTOUCHED PRESERVATION
  */
 router.get('/keys', async (req, res) => {
   try {
@@ -160,7 +173,7 @@ router.get('/keys', async (req, res) => {
 
 /**
  * 📊 GET /api/admin-panel/overview
- * 🌟 NEW: Master stats for the Dashboard (Hardware Distribution & Expirations)
+ * 🔒 UNTOUCHED PRESERVATION
  */
 router.get('/overview', async (req, res) => {
   try {
